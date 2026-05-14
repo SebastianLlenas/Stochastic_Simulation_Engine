@@ -1,0 +1,51 @@
+# --- Omega-9 Specific ---
+# Ignore the compiled test executables
+verify_action.exe
+verify_db.exe
+verify_state.exe
+verify_action
+verify_db
+verify_state
+
+# --- C++ Build Artifacts ---
+# Object files
+*.o
+*.obj
+
+# Dynamic Libraries
+*.dll
+*.so
+*.dylib
+
+# Executables (General rule)
+*.exe
+*.out
+*.app
+
+# CMake Build Folders (for later)
+build/
+bin/
+out/
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+
+# --- IDE & System Metadata ---
+# VS Code
+.vscode/
+*.code-workspace
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+
+# Mac/Linux
+.DS_Store
+
+# --- Python (For Phase 3) ---
+__pycache__/
+*.pyc
+venv/
+.env

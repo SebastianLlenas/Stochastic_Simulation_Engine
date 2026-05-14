@@ -1,0 +1,2435 @@
+﻿
+// --- File: C:\dev\Omega9_Engine\src\data\database.cpp ---
+
+#include "data/database.h"
+
+#include <algorithm>
+
+namespace omega9 {
+
+StaticDatabase &StaticDatabase::instance() {
+  static StaticDatabase db;
+  return db;
+}
+
+StaticDatabase::StaticDatabase() {
+  init_type_chart();
+  load_dummy_data();
+}
+
+const BaseStats &StaticDatabase::base_stats(SpeciesID id) const {
+  return base_stats_[id];
+}
+
+const MoveData &StaticDatabase::move_data(MoveID id) const {
+  return move_data_[id];
+}
+
+const RandomBattleSet &StaticDatabase::random_battle_set(SpeciesID id) const {
+  return random_sets_[id];
+}
+
+void StaticDatabase::fill_moveset(SpeciesID id, std::array<MoveID, 4> &moves,
+                                  std::array<uint8_t, 4> &pp) const {
+  moves.fill(MoveNone);
+  pp.fill(0);
+
+  if (id >= random_sets_.size()) return;
+  const RandomBattleSet &set = random_sets_[id];
+  const std::size_t count =
+      std::min<std::size_t>(set.moves.size(), moves.size());
+
+  for (std::size_t i = 0; i < count; ++i) {
+    const MoveID move_id = set.moves[i];
+    moves[i] = move_id;
+    if (move_id < move_data_.size()) {
+      pp[i] = move_data_[move_id].pp;
+    }
+  }
+}
+
+float StaticDatabase::type_multiplier(TypeID attacker, TypeID defender) const {
+  const std::size_t index = static_cast<std::size_t>(attacker) * kTypeCount +
+                            static_cast<std::size_t>(defender);
+  return type_chart_[index];
+}
+
+void StaticDatabase::load_dummy_data() {
+  base_stats_.assign(SpeciesCount, BaseStats{});
+  move_data_.assign(MoveCount, MoveData{});
+  random_sets_.assign(SpeciesCount, RandomBattleSet{});
+
+  base_stats_[SpeciesFlutterMane] =
+      BaseStats{55, 55, 55, 135, 135, 135, TypeGhost, TypeFairy};
+  base_stats_[SpeciesKoraidon] =
+      BaseStats{100, 135, 115, 85, 100, 135, TypeFighting, TypeDragon};
+  base_stats_[SpeciesIronHands] =
+      BaseStats{154, 140, 108, 50, 68, 50, TypeFighting, TypeElectric};
+
+  move_data_[MoveMoonblast] =
+      MoveData{95, TypeFairy, 100, 0, MoveSpecial, 0, 0, 0, 1, 1, 15};
+  move_data_[MoveShadowBall] =
+      MoveData{80, TypeGhost, 100, 0, MoveSpecial, 0, 0, 0, 1, 1, 15};
+  move_data_[MoveCollisionCourse] =
+      MoveData{100, TypeFighting, 100, 0, MovePhysical, MoveFlagContact, 0, 0,
+               1, 1, 5};
+  move_data_[MoveDragonClaw] =
+      MoveData{80, TypeDragon, 100, 0, MovePhysical, MoveFlagContact, 0, 0, 1,
+               1, 15};
+  move_data_[MoveThunderPunch] =
+      MoveData{75, TypeElectric, 100, 0, MovePhysical,
+               static_cast<uint8_t>(MoveFlagContact | MoveFlagPunch), 0, 0, 1,
+               1, 15};
+  move_data_[MoveDrainPunch] =
+      MoveData{75, TypeFighting, 100, 0, MovePhysical,
+               static_cast<uint8_t>(MoveFlagContact | MoveFlagPunch), 0, 0, 1,
+               1, 10};
+  move_data_[MovePsyshock] =
+      MoveData{80, TypePsychic, 100, 0, MoveSpecial, 0, 0, 0, 1, 1, 10};
+  move_data_[MoveBodyPress] =
+      MoveData{80, TypeFighting, 100, 0, MovePhysical, 0, 0, 0, 1, 1, 10};
+  move_data_[MoveFoulPlay] =
+      MoveData{95, TypeDark, 100, 0, MovePhysical, 0, 0, 0, 1, 1, 15};
+  move_data_[MoveEarthquake] =
+      MoveData{100, TypeGround, 100, 0, MovePhysical, 0, 0, 0, 1, 1, 10};
+  move_data_[MoveBulldoze] =
+      MoveData{60, TypeGround, 100, 0, MovePhysical, 0, 0, 0, 1, 1, 20};
+  move_data_[MoveStruggle] =
+      MoveData{50, TypeNone, 0, 0, MovePhysical, 0, 0, 0, 1, 1, 1};
+  move_data_[MoveProtect] =
+      MoveData{0, TypeNormal, 0, 4, MoveStatus, MoveFlagTargetSelf, 0, 0, 1, 1,
+               10};
+
+  random_sets_[SpeciesFlutterMane].moves = {MoveMoonblast, MoveShadowBall};
+  random_sets_[SpeciesFlutterMane].items = {ItemBoosterEnergy, ItemChoiceScarf,
+                                            ItemFocusSash};
+
+  random_sets_[SpeciesKoraidon].moves = {MoveCollisionCourse, MoveDragonClaw};
+  random_sets_[SpeciesKoraidon].items = {ItemChoiceScarf, ItemLeftovers};
+
+  random_sets_[SpeciesIronHands].moves = {MoveDrainPunch, MoveThunderPunch};
+  random_sets_[SpeciesIronHands].items = {ItemBoosterEnergy, ItemLeftovers};
+}
+
+void StaticDatabase::init_type_chart() {
+  type_chart_.fill(1.0f);
+
+  auto set_multiplier = [this](TypeID attacker, TypeID defender, float value) {
+    const std::size_t index = static_cast<std::size_t>(attacker) * kTypeCount +
+                              static_cast<std::size_t>(defender);
+    type_chart_[index] = value;
+  };
+
+  // Normal
+  set_multiplier(TypeNormal, TypeRock, 0.5f);
+  set_multiplier(TypeNormal, TypeSteel, 0.5f);
+  set_multiplier(TypeNormal, TypeGhost, 0.0f);
+
+  // Fire
+  set_multiplier(TypeFire, TypeGrass, 2.0f);
+  set_multiplier(TypeFire, TypeIce, 2.0f);
+  set_multiplier(TypeFire, TypeBug, 2.0f);
+  set_multiplier(TypeFire, TypeSteel, 2.0f);
+  set_multiplier(TypeFire, TypeFire, 0.5f);
+  set_multiplier(TypeFire, TypeWater, 0.5f);
+  set_multiplier(TypeFire, TypeRock, 0.5f);
+  set_multiplier(TypeFire, TypeDragon, 0.5f);
+
+  // Water
+  set_multiplier(TypeWater, TypeFire, 2.0f);
+  set_multiplier(TypeWater, TypeGround, 2.0f);
+  set_multiplier(TypeWater, TypeRock, 2.0f);
+  set_multiplier(TypeWater, TypeWater, 0.5f);
+  set_multiplier(TypeWater, TypeGrass, 0.5f);
+  set_multiplier(TypeWater, TypeDragon, 0.5f);
+
+  // Electric
+  set_multiplier(TypeElectric, TypeWater, 2.0f);
+  set_multiplier(TypeElectric, TypeFlying, 2.0f);
+  set_multiplier(TypeElectric, TypeElectric, 0.5f);
+  set_multiplier(TypeElectric, TypeGrass, 0.5f);
+  set_multiplier(TypeElectric, TypeDragon, 0.5f);
+  set_multiplier(TypeElectric, TypeGround, 0.0f);
+
+  // Grass
+  set_multiplier(TypeGrass, TypeWater, 2.0f);
+  set_multiplier(TypeGrass, TypeGround, 2.0f);
+  set_multiplier(TypeGrass, TypeRock, 2.0f);
+  set_multiplier(TypeGrass, TypeFire, 0.5f);
+  set_multiplier(TypeGrass, TypeGrass, 0.5f);
+  set_multiplier(TypeGrass, TypePoison, 0.5f);
+  set_multiplier(TypeGrass, TypeFlying, 0.5f);
+  set_multiplier(TypeGrass, TypeBug, 0.5f);
+  set_multiplier(TypeGrass, TypeDragon, 0.5f);
+  set_multiplier(TypeGrass, TypeSteel, 0.5f);
+
+  // Ice
+  set_multiplier(TypeIce, TypeGrass, 2.0f);
+  set_multiplier(TypeIce, TypeGround, 2.0f);
+  set_multiplier(TypeIce, TypeFlying, 2.0f);
+  set_multiplier(TypeIce, TypeDragon, 2.0f);
+  set_multiplier(TypeIce, TypeFire, 0.5f);
+  set_multiplier(TypeIce, TypeWater, 0.5f);
+  set_multiplier(TypeIce, TypeIce, 0.5f);
+  set_multiplier(TypeIce, TypeSteel, 0.5f);
+
+  // Fighting
+  set_multiplier(TypeFighting, TypeNormal, 2.0f);
+  set_multiplier(TypeFighting, TypeIce, 2.0f);
+  set_multiplier(TypeFighting, TypeRock, 2.0f);
+  set_multiplier(TypeFighting, TypeDark, 2.0f);
+  set_multiplier(TypeFighting, TypeSteel, 2.0f);
+  set_multiplier(TypeFighting, TypePoison, 0.5f);
+  set_multiplier(TypeFighting, TypeFlying, 0.5f);
+  set_multiplier(TypeFighting, TypePsychic, 0.5f);
+  set_multiplier(TypeFighting, TypeBug, 0.5f);
+  set_multiplier(TypeFighting, TypeFairy, 0.5f);
+  set_multiplier(TypeFighting, TypeGhost, 0.0f);
+
+  // Poison
+  set_multiplier(TypePoison, TypeGrass, 2.0f);
+  set_multiplier(TypePoison, TypeFairy, 2.0f);
+  set_multiplier(TypePoison, TypePoison, 0.5f);
+  set_multiplier(TypePoison, TypeGround, 0.5f);
+  set_multiplier(TypePoison, TypeRock, 0.5f);
+  set_multiplier(TypePoison, TypeGhost, 0.5f);
+  set_multiplier(TypePoison, TypeSteel, 0.0f);
+
+  // Ground
+  set_multiplier(TypeGround, TypeFire, 2.0f);
+  set_multiplier(TypeGround, TypeElectric, 2.0f);
+  set_multiplier(TypeGround, TypePoison, 2.0f);
+  set_multiplier(TypeGround, TypeRock, 2.0f);
+  set_multiplier(TypeGround, TypeSteel, 2.0f);
+  set_multiplier(TypeGround, TypeGrass, 0.5f);
+  set_multiplier(TypeGround, TypeBug, 0.5f);
+  set_multiplier(TypeGround, TypeFlying, 0.0f);
+
+  // Flying
+  set_multiplier(TypeFlying, TypeGrass, 2.0f);
+  set_multiplier(TypeFlying, TypeFighting, 2.0f);
+  set_multiplier(TypeFlying, TypeBug, 2.0f);
+  set_multiplier(TypeFlying, TypeElectric, 0.5f);
+  set_multiplier(TypeFlying, TypeRock, 0.5f);
+  set_multiplier(TypeFlying, TypeSteel, 0.5f);
+
+  // Psychic
+  set_multiplier(TypePsychic, TypeFighting, 2.0f);
+  set_multiplier(TypePsychic, TypePoison, 2.0f);
+  set_multiplier(TypePsychic, TypePsychic, 0.5f);
+  set_multiplier(TypePsychic, TypeSteel, 0.5f);
+  set_multiplier(TypePsychic, TypeDark, 0.0f);
+
+  // Bug
+  set_multiplier(TypeBug, TypeGrass, 2.0f);
+  set_multiplier(TypeBug, TypePsychic, 2.0f);
+  set_multiplier(TypeBug, TypeDark, 2.0f);
+  set_multiplier(TypeBug, TypeFire, 0.5f);
+  set_multiplier(TypeBug, TypeFighting, 0.5f);
+  set_multiplier(TypeBug, TypePoison, 0.5f);
+  set_multiplier(TypeBug, TypeFlying, 0.5f);
+  set_multiplier(TypeBug, TypeGhost, 0.5f);
+  set_multiplier(TypeBug, TypeSteel, 0.5f);
+  set_multiplier(TypeBug, TypeFairy, 0.5f);
+
+  // Rock
+  set_multiplier(TypeRock, TypeFire, 2.0f);
+  set_multiplier(TypeRock, TypeIce, 2.0f);
+  set_multiplier(TypeRock, TypeFlying, 2.0f);
+  set_multiplier(TypeRock, TypeBug, 2.0f);
+  set_multiplier(TypeRock, TypeFighting, 0.5f);
+  set_multiplier(TypeRock, TypeGround, 0.5f);
+  set_multiplier(TypeRock, TypeSteel, 0.5f);
+
+  // Ghost
+  set_multiplier(TypeGhost, TypePsychic, 2.0f);
+  set_multiplier(TypeGhost, TypeGhost, 2.0f);
+  set_multiplier(TypeGhost, TypeDark, 0.5f);
+  set_multiplier(TypeGhost, TypeNormal, 0.0f);
+
+  // Dragon
+  set_multiplier(TypeDragon, TypeDragon, 2.0f);
+  set_multiplier(TypeDragon, TypeSteel, 0.5f);
+  set_multiplier(TypeDragon, TypeFairy, 0.0f);
+
+  // Dark
+  set_multiplier(TypeDark, TypePsychic, 2.0f);
+  set_multiplier(TypeDark, TypeGhost, 2.0f);
+  set_multiplier(TypeDark, TypeFighting, 0.5f);
+  set_multiplier(TypeDark, TypeDark, 0.5f);
+  set_multiplier(TypeDark, TypeFairy, 0.5f);
+
+  // Steel
+  set_multiplier(TypeSteel, TypeIce, 2.0f);
+  set_multiplier(TypeSteel, TypeRock, 2.0f);
+  set_multiplier(TypeSteel, TypeFairy, 2.0f);
+  set_multiplier(TypeSteel, TypeFire, 0.5f);
+  set_multiplier(TypeSteel, TypeWater, 0.5f);
+  set_multiplier(TypeSteel, TypeElectric, 0.5f);
+  set_multiplier(TypeSteel, TypeSteel, 0.5f);
+
+  // Fairy
+  set_multiplier(TypeFairy, TypeFighting, 2.0f);
+  set_multiplier(TypeFairy, TypeDragon, 2.0f);
+  set_multiplier(TypeFairy, TypeDark, 2.0f);
+  set_multiplier(TypeFairy, TypeFire, 0.5f);
+  set_multiplier(TypeFairy, TypePoison, 0.5f);
+  set_multiplier(TypeFairy, TypeSteel, 0.5f);
+}
+
+} // namespace omega9
+
+// --- File: C:\dev\Omega9_Engine\src\engine\action.cpp ---
+
+#include "engine/action.h"
+
+#include <limits>
+
+#include "engine/utils.h"
+
+namespace omega9 {
+namespace {
+
+int find_move_slot(const ActiveMon &active, MoveID move_id) {
+  for (std::size_t i = 0; i < active.moves.size(); ++i) {
+    if (active.moves[i] == move_id) {
+      return static_cast<int>(i);
+    }
+  }
+  return -1;
+}
+
+bool has_type(const ActiveMon &active, TypeID type) {
+  if (active.tera_state & TeraActive) {
+    return active.tera_type == type;
+  }
+  const auto &db = StaticDatabase::instance();
+  if (active.species_id >= db.species_count()) return false;
+  const BaseStats &base = db.base_stats(active.species_id);
+  if (base.type1 == type) return true;
+  return base.type2 < kTypeCount && base.type2 == type;
+}
+
+bool is_choice_item(ItemID item_id) {
+  return item_id == ItemChoiceBand || item_id == ItemChoiceSpecs ||
+         item_id == ItemChoiceScarf;
+}
+
+} // namespace
+
+Action Action::make_move(uint8_t side_index, MoveID move_id, bool is_tera) {
+  Action action{};
+  action.id = static_cast<uint16_t>(move_id);
+  action.flags = is_tera ? kFlagTera : 0;
+  action.side = side_index;
+  return action;
+}
+
+Action Action::make_switch(uint8_t side_index, BenchSlotIndex bench_index) {
+  Action action{};
+  action.id = static_cast<uint16_t>(bench_index);
+  action.flags = kFlagSwitch;
+  action.side = side_index;
+  return action;
+}
+
+uint16_t calculate_speed(const BattleState &state, uint8_t side_index) {
+  if (side_index >= kSides) return 0;
+
+  const SideState &side = state.sides[side_index];
+  const ActiveMon &active = side.active;
+
+  const auto &db = StaticDatabase::instance();
+  if (active.species_id >= db.species_count()) return 0;
+  const BaseStats &base = db.base_stats(active.species_id);
+
+  uint32_t speed = get_real_stat(base, StatSpe, active.level);
+  const int stage = clamp_stage(static_cast<int>(active.stat_stages[StatSpe]));
+
+  if (stage >= 0) {
+    speed = (speed * static_cast<uint32_t>(2 + stage)) / 2u;
+  } else {
+    speed = (speed * 2u) / static_cast<uint32_t>(2 + (-stage));
+  }
+
+  if (active.item_id == ItemChoiceScarf) {
+    speed = (speed * 3u) / 2u;
+  }
+
+  if (state.global_field_mask & FieldWeatherSun) {
+    // TODO: Apply Protosynthesis Speed boost when ability/volatile data exists.
+  }
+
+  if (side.side_condition_mask & SideConditionTailwind) {
+    speed *= 2u;
+  }
+
+  if (active.major_status & StatusParalysis) {
+    speed /= 2u; // Gen 9: paralysis halves Speed.
+  }
+
+  if (speed > std::numeric_limits<uint16_t>::max()) {
+    speed = std::numeric_limits<uint16_t>::max();
+  }
+
+  return static_cast<uint16_t>(speed);
+}
+
+static int action_priority(const Action &action) {
+  if (action.is_switch()) return 6;
+  const auto &db = StaticDatabase::instance();
+  if (action.move_id() >= db.move_count()) return 0;
+  return db.move_data(action.move_id()).priority;
+}
+
+bool goes_first(const BattleState &state, const Action &a1, const Action &a2,
+                float random_sample) {
+  const int p1 = action_priority(a1);
+  const int p2 = action_priority(a2);
+
+  if (p1 != p2) return p1 > p2;
+
+  const uint16_t s1 = calculate_speed(state, a1.side);
+  const uint16_t s2 = calculate_speed(state, a2.side);
+
+  if (s1 != s2) {
+    const bool trick_room = (state.global_field_mask & FieldRoomTrick) != 0;
+    return trick_room ? (s1 < s2) : (s1 > s2);
+  }
+
+  return random_sample > 0.5f;
+}
+
+bool is_valid_action(const BattleState &state, const Action &action) {
+  if (action.side >= kSides) return false;
+
+  const SideState &side = state.sides[action.side];
+
+  if (action.is_move()) {
+    if (side.active.hp == 0) return false;
+    const MoveID move_id = action.move_id();
+    if (move_id == MoveNone) return false;
+
+    const auto &db = StaticDatabase::instance();
+    if (move_id >= db.move_count()) return false;
+    if (side.active.species_id >= db.species_count()) return false;
+    const ActiveMon &active = side.active;
+    if (action.is_tera()) {
+      if (side.side_condition_mask & SideConditionTeraUsed) return false;
+      if (active.tera_state & TeraActive) return false;
+    }
+    if (move_id == MoveStruggle) {
+      bool all_empty = true;
+      for (std::size_t i = 0; i < active.moves.size(); ++i) {
+        if (active.moves[i] == MoveNone) continue;
+        if (active.pp[i] > 0) {
+          all_empty = false;
+          break;
+        }
+      }
+      if (all_empty) return true;
+      if (active.choice_move_id != 0) {
+        const int choice_slot = find_move_slot(active, active.choice_move_id);
+        if (choice_slot >= 0 && active.pp[choice_slot] == 0) {
+          return true;
+        }
+      }
+      return false;
+    }
+    if (active.choice_move_id != 0) {
+      if (move_id != active.choice_move_id) return false;
+      const int choice_slot = find_move_slot(active, active.choice_move_id);
+      if (choice_slot >= 0 && active.pp[choice_slot] == 0) return false;
+    }
+    const MoveData &move = db.move_data(move_id);
+    if (active.item_id == ItemAssaultVest && move.category == MoveStatus) {
+      return false;
+    }
+    const int slot = find_move_slot(active, move_id);
+    if (slot < 0) return false;
+    return active.pp[slot] > 0;
+  }
+
+  if (action.is_switch()) {
+    if (side.active.volatile_mask & VolatileTrapped) {
+      if (!has_type(side.active, TypeGhost)) return false;
+    }
+    const BenchSlotIndex slot = action.bench_index();
+    if (slot >= kBenchSize) return false;
+    const BenchMon &target = side.bench[slot];
+    if (target.species_id == 0) return false;
+    if (target.hp_percent == 0) return false;
+    return true;
+  }
+
+  return false;
+}
+
+} // namespace omega9
+
+// --- File: C:\dev\Omega9_Engine\src\engine\batch.cpp ---
+
+#include "engine/batch.h"
+
+#include <cstddef>
+#include <cstdint>
+
+#include "engine/step.h"
+
+namespace omega9 {
+
+BatchResult step_batch(const std::vector<BattleState> &states,
+                       const std::vector<Action> &p1_actions,
+                       const std::vector<Action> &p2_actions,
+                       const std::vector<float> &random_seeds) {
+  const std::size_t count = states.size();
+
+  BatchResult result;
+  result.states.resize(count);
+  result.rewards.resize(count);
+
+  const BattleState *state_data = states.data();
+  const Action *p1_data = p1_actions.data();
+  const Action *p2_data = p2_actions.data();
+  const float *seed_data = random_seeds.data();
+  BattleState *out_states = result.states.data();
+  float *out_rewards = result.rewards.data();
+
+#pragma omp parallel for
+  for (std::int64_t i = 0; i < static_cast<std::int64_t>(count); ++i) {
+    const std::size_t index = static_cast<std::size_t>(i);
+    const auto step_result =
+        step(state_data[index], p1_data[index], p2_data[index],
+             seed_data[index]);
+    out_states[index] = step_result.first;
+    out_rewards[index] = step_result.second;
+  }
+
+  return result;
+}
+
+} // namespace omega9
+
+// --- File: C:\dev\Omega9_Engine\src\engine\damage.cpp ---
+
+#include "engine/damage.h"
+
+#include <algorithm>
+#include <limits>
+
+#include "engine/utils.h"
+
+namespace omega9 {
+namespace {
+
+uint16_t apply_stage(uint16_t stat, int stage) {
+  if (stage > 6) stage = 6;
+  if (stage < -6) stage = -6;
+  if (stage >= 0) {
+    const uint32_t num = static_cast<uint32_t>(2 + stage);
+    return static_cast<uint16_t>((static_cast<uint32_t>(stat) * num) / 2u);
+  }
+  const uint32_t den = static_cast<uint32_t>(2 + (-stage));
+  return static_cast<uint16_t>((static_cast<uint32_t>(stat) * 2u) / den);
+}
+
+uint32_t apply_fraction(uint32_t value, uint32_t num, uint32_t den) {
+  if (den == 0) return 0;
+  return static_cast<uint32_t>((static_cast<uint64_t>(value) * num) / den);
+}
+
+uint16_t apply_item_stat_boost(uint16_t stat, StatIndex index, ItemID item_id) {
+  uint32_t num = 1u;
+  uint32_t den = 1u;
+  switch (item_id) {
+    case ItemChoiceBand:
+      if (index == StatAtk) {
+        num = 3u;
+        den = 2u;
+      }
+      break;
+    case ItemChoiceSpecs:
+      if (index == StatSpa) {
+        num = 3u;
+        den = 2u;
+      }
+      break;
+    case ItemAssaultVest:
+      if (index == StatSpd) {
+        num = 3u;
+        den = 2u;
+      }
+      break;
+    case ItemEviolite:
+      if (index == StatDef || index == StatSpd) {
+        num = 3u;
+        den = 2u;
+      }
+      break;
+    default:
+      break;
+  }
+  if (num == 1u && den == 1u) return stat;
+  const uint32_t boosted = apply_fraction(stat, num, den);
+  return static_cast<uint16_t>(std::min<uint32_t>(
+      boosted, std::numeric_limits<uint16_t>::max()));
+}
+
+bool has_type(const ActiveMon &active, const BaseStats &base, TypeID type) {
+  if (active.tera_state & TeraActive) {
+    return active.tera_type == type;
+  }
+  if (type == base.type1) return true;
+  return base.type2 < kTypeCount && type == base.type2;
+}
+
+bool is_base_type(TypeID type, const BaseStats &base) {
+  if (type == base.type1) return true;
+  return base.type2 < kTypeCount && type == base.type2;
+}
+
+void apply_type_multiplier(const StaticDatabase &db, TypeID move_type,
+                           TypeID defender_type, uint32_t &num,
+                           uint32_t &den, bool &zero_out,
+                           bool ignore_immunity) {
+  if (defender_type >= kTypeCount || zero_out) return;
+  const float mult = db.type_multiplier(move_type, defender_type);
+  if (mult == 0.0f) {
+    if (!ignore_immunity) {
+      zero_out = true;
+    }
+    return;
+  }
+  if (mult == 0.5f) {
+    den *= 2u;
+  } else if (mult == 2.0f) {
+    num *= 2u;
+  }
+}
+
+} // namespace
+
+DamageResult calculate_damage(const BattleState &state, uint8_t attacker_side,
+                              MoveID move_id, bool is_crit) {
+  DamageResult result{};
+
+  if (attacker_side >= kSides) return result;
+  const uint8_t defender_side = attacker_side ^ 1u;
+
+  const auto &db = StaticDatabase::instance();
+  if (move_id == MoveNone || move_id >= db.move_count()) return result;
+
+  const SideState &attacker_state = state.sides[attacker_side];
+  const SideState &defender_state = state.sides[defender_side];
+  const ActiveMon &attacker = attacker_state.active;
+  const ActiveMon &defender = defender_state.active;
+
+  if (attacker.species_id >= db.species_count()) return result;
+  if (defender.species_id >= db.species_count()) return result;
+
+  const BaseStats &attacker_base = db.base_stats(attacker.species_id);
+  const BaseStats &defender_base = db.base_stats(defender.species_id);
+  const MoveData &move = db.move_data(move_id);
+
+  if (move.category == MoveStatus || move.power == 0) return result;
+
+  StatIndex attack_stat = (move.category == MovePhysical) ? StatAtk : StatSpa;
+  StatIndex defense_stat = (move.category == MovePhysical) ? StatDef : StatSpd;
+  const ActiveMon *attack_mon = &attacker;
+  const ActiveMon *defense_mon = &defender;
+  const ActiveMon *stat_source = &attacker;
+  const BaseStats *stat_base = &attacker_base;
+  const BaseStats *defense_base = &defender_base;
+
+  if (move_id == MovePsyshock) {
+    attack_stat = StatSpa;
+    defense_stat = StatDef;
+  } else if (move_id == MoveBodyPress) {
+    attack_stat = StatDef;
+    defense_stat = StatDef;
+  } else if (move_id == MoveFoulPlay) {
+    attack_stat = StatAtk;
+    defense_stat = StatDef;
+    attack_mon = &defender;
+    stat_source = &defender;
+    stat_base = &defender_base;
+  }
+
+  uint16_t attack_value =
+      get_real_stat(*stat_base, attack_stat, stat_source->level);
+  uint16_t defense_value =
+      get_real_stat(*defense_base, defense_stat, defense_mon->level);
+
+  if (attack_value == 0 || defense_value == 0 || attacker.level == 0) {
+    return result;
+  }
+
+  int attack_stage =
+      clamp_stage(static_cast<int>(attack_mon->stat_stages[attack_stat]));
+  int defense_stage =
+      clamp_stage(static_cast<int>(defense_mon->stat_stages[defense_stat]));
+
+  if (is_crit) {
+    if (attack_stage < 0) attack_stage = 0;
+    if (defense_stage > 0) defense_stage = 0;
+  }
+
+  attack_value = apply_stage(attack_value, attack_stage);
+  defense_value = apply_stage(defense_value, defense_stage);
+  if (defense_value == 0) return result;
+
+  attack_value =
+      apply_item_stat_boost(attack_value, attack_stat, attacker.item_id);
+  defense_value =
+      apply_item_stat_boost(defense_value, defense_stat, defense_mon->item_id);
+  if (defense_value == 0) return result;
+
+  if ((state.global_field_mask & FieldWeatherSand) &&
+      defense_stat == StatSpd &&
+      has_type(defender, defender_base, TypeRock)) {
+    const uint32_t boosted = apply_fraction(defense_value, 3u, 2u);
+    defense_value = static_cast<uint16_t>(std::min<uint32_t>(
+        boosted, std::numeric_limits<uint16_t>::max()));
+  }
+
+  if ((state.global_field_mask & FieldWeatherSnow) &&
+      defense_stat == StatDef &&
+      has_type(defender, defender_base, TypeIce)) {
+    const uint32_t boosted = apply_fraction(defense_value, 3u, 2u);
+    defense_value = static_cast<uint16_t>(std::min<uint32_t>(
+        boosted, std::numeric_limits<uint16_t>::max()));
+  }
+
+  const uint32_t level = attacker.level;
+  uint32_t power = move.power;
+  const bool tera_active = (attacker.tera_state & TeraActive) != 0;
+  const bool multi_hit = move.min_hits > 1;
+  if (tera_active && move.type == attacker.tera_type && move.priority <= 0 &&
+      move.power > 0 && move.power < 60 && !multi_hit) {
+    power = 60;
+  }
+  const bool attacker_grounded = is_grounded(attacker, attacker_base);
+  const bool defender_grounded = is_grounded(defender, defender_base);
+
+  if (state.global_field_mask & FieldTerrainElectric) {
+    if (attacker_grounded && move.type == TypeElectric) {
+      power = apply_fraction(power, 13u, 10u);
+    }
+  } else if (state.global_field_mask & FieldTerrainPsychic) {
+    if (attacker_grounded && move.type == TypePsychic) {
+      power = apply_fraction(power, 13u, 10u);
+    }
+  } else if (state.global_field_mask & FieldTerrainGrassy) {
+    if (attacker_grounded && move.type == TypeGrass) {
+      power = apply_fraction(power, 13u, 10u);
+    }
+    if (defender_grounded &&
+        (move_id == MoveEarthquake || move_id == MoveBulldoze)) {
+      power = apply_fraction(power, 1u, 2u);
+    }
+  } else if (state.global_field_mask & FieldTerrainMisty) {
+    if (defender_grounded && move.type == TypeDragon) {
+      power = apply_fraction(power, 1u, 2u);
+    }
+  }
+
+  uint32_t type_num = 1u;
+  uint32_t type_den = 1u;
+  bool zero_out = false;
+  if (move.type != TypeNone) {
+    const bool ignore_immunity =
+        (move.flags & MoveFlagIgnoreImmunity) != 0;
+    const bool defender_tera = (defender.tera_state & TeraActive) != 0;
+    if (defender_tera) {
+      apply_type_multiplier(db, move.type, defender.tera_type, type_num,
+                            type_den, zero_out, ignore_immunity);
+    } else {
+      apply_type_multiplier(db, move.type, defender_base.type1, type_num,
+                            type_den, zero_out, ignore_immunity);
+      apply_type_multiplier(db, move.type, defender_base.type2, type_num,
+                            type_den, zero_out, ignore_immunity);
+    }
+  }
+
+  if (move_id == MoveCollisionCourse && type_num > type_den && !zero_out) {
+    power = apply_fraction(power, 5461u, 4096u);
+  }
+
+  uint32_t damage =
+      static_cast<uint32_t>((2u * level) / 5u + 2u);
+  uint64_t base = static_cast<uint64_t>(damage) * power * attack_value;
+  base /= defense_value;
+  base /= 50u;
+  base += 2u;
+  damage = static_cast<uint32_t>(base);
+
+  if (state.global_field_mask & FieldWeatherSun) {
+    if (move.type == TypeFire) {
+      damage = apply_fraction(damage, 3u, 2u);
+    } else if (move.type == TypeWater) {
+      damage = apply_fraction(damage, 1u, 2u);
+    }
+  } else if (state.global_field_mask & FieldWeatherRain) {
+    if (move.type == TypeWater) {
+      damage = apply_fraction(damage, 3u, 2u);
+    } else if (move.type == TypeFire) {
+      damage = apply_fraction(damage, 1u, 2u);
+    }
+  }
+
+  if (is_crit) {
+    damage = apply_fraction(damage, 3u, 2u);
+  }
+
+  uint32_t stab_num = 1u;
+  uint32_t stab_den = 1u;
+  if (tera_active) {
+    const bool tera_match = (move.type == attacker.tera_type);
+    const bool original_match = is_base_type(move.type, attacker_base);
+    if (tera_match) {
+      if (is_base_type(attacker.tera_type, attacker_base)) {
+        stab_num = 2u;
+        stab_den = 1u;
+      } else {
+        stab_num = 3u;
+        stab_den = 2u;
+      }
+    } else if (original_match) {
+      stab_num = 3u;
+      stab_den = 2u;
+    }
+  } else if (is_base_type(move.type, attacker_base)) {
+    stab_num = 3u;
+    stab_den = 2u;
+  }
+
+  uint32_t burn_num = 1u;
+  uint32_t burn_den = 1u;
+  if (move.category == MovePhysical && (attacker.major_status & StatusBurn)) {
+    burn_num = 1u;
+    burn_den = 2u;
+  }
+
+  uint32_t screen_num = 1u;
+  uint32_t screen_den = 1u;
+  if (!is_crit) {
+    if (move.category == MovePhysical) {
+      if (defender_state.side_condition_mask &
+          (SideConditionReflect | SideConditionAuroraVeil)) {
+        screen_den = 2u;
+      }
+    } else if (move.category == MoveSpecial) {
+      if (defender_state.side_condition_mask &
+          (SideConditionLightScreen | SideConditionAuroraVeil)) {
+        screen_den = 2u;
+      }
+    }
+  }
+
+  uint32_t life_orb_num = 1u;
+  uint32_t life_orb_den = 1u;
+  if (attacker.item_id == ItemLifeOrb) {
+    life_orb_num = 13u;
+    life_orb_den = 10u;
+  }
+
+  if ((defender.volatile_mask & VolatileFlying) &&
+      (move.flags & MoveFlagHitsFlying)) {
+    damage *= 2u;
+  }
+
+  if ((defender.volatile_mask & VolatileDigging) &&
+      (move.flags & MoveFlagHitsDigging)) {
+    damage *= 2u;
+  }
+
+  for (std::size_t i = 0; i < result.rolls.size(); ++i) {
+    uint32_t roll =
+        apply_fraction(damage, static_cast<uint32_t>(85u + i), 100u);
+
+    roll = apply_fraction(roll, stab_num, stab_den);
+
+    if (zero_out) {
+      roll = 0;
+    } else {
+      roll = apply_fraction(roll, type_num, type_den);
+    }
+
+    roll = apply_fraction(roll, burn_num, burn_den);
+    roll = apply_fraction(roll, screen_num, screen_den);
+    roll = apply_fraction(roll, life_orb_num, life_orb_den);
+
+    if (roll == 0 && !zero_out) roll = 1u;
+
+    result.rolls[i] = static_cast<uint16_t>(
+        std::min<uint32_t>(roll, std::numeric_limits<uint16_t>::max()));
+  }
+
+  return result;
+}
+
+} // namespace omega9
+
+// --- File: C:\dev\Omega9_Engine\src\engine\encoder.cpp ---
+
+#include "engine/encoder.h"
+
+#include <algorithm>
+#include <cstdint>
+#include <limits>
+
+#include "data/database.h"
+
+namespace omega9 {
+namespace {
+
+constexpr uint8_t kPerfectIv = 31;
+constexpr uint8_t kRandbatsEv = 85;
+
+constexpr int kTypeFeatureCount = static_cast<int>(kTypeCount) + 1;
+
+float clamp01(float value) {
+  if (value < 0.0f) return 0.0f;
+  if (value > 1.0f) return 1.0f;
+  return value;
+}
+
+float normalize_stage(int8_t stage) {
+  if (stage < -6) stage = -6;
+  if (stage > 6) stage = 6;
+  return (static_cast<float>(stage) + 6.0f) / 12.0f;
+}
+
+float normalize_species_id(uint16_t id, uint16_t max_id) {
+  if (max_id == 0) return 0.0f;
+  if (id > max_id) id = max_id;
+  return static_cast<float>(id) / static_cast<float>(max_id);
+}
+
+uint16_t max_hp_value(const BaseStats &base, uint8_t level) {
+  if (level == 0) return 0;
+  const uint32_t ev = kRandbatsEv / 4u;
+  uint32_t value = (2u * base.hp + kPerfectIv + ev);
+  value = (value * level) / 100u;
+  value += static_cast<uint32_t>(level) + 10u;
+  return static_cast<uint16_t>(
+      std::min<uint32_t>(value, std::numeric_limits<uint16_t>::max()));
+}
+
+float hp_ratio(uint16_t hp, uint16_t max_hp) {
+  if (max_hp == 0 || hp == 0) return 0.0f;
+  return clamp01(static_cast<float>(hp) / static_cast<float>(max_hp));
+}
+
+void write_type_one_hot(float *&cursor, TypeID type_id) {
+  int index = static_cast<int>(kTypeCount);
+  if (type_id < kTypeCount) {
+    index = static_cast<int>(type_id);
+  }
+  for (int i = 0; i < kTypeFeatureCount; ++i) {
+    *cursor++ = (i == index) ? 1.0f : 0.0f;
+  }
+}
+
+} // namespace
+
+void encode_batch(const std::vector<BattleState> &states, float *out_buffer) {
+  if (states.empty() || out_buffer == nullptr) return;
+
+  const auto &db = StaticDatabase::instance();
+  const std::size_t species_count = db.species_count();
+  const uint16_t max_species_id =
+      species_count > 0 ? static_cast<uint16_t>(species_count - 1) : 0;
+
+  const BattleState *state_data = states.data();
+  const std::size_t count = states.size();
+
+#pragma omp parallel for
+  for (std::int64_t i = 0; i < static_cast<std::int64_t>(count); ++i) {
+    const std::size_t index = static_cast<std::size_t>(i);
+    const BattleState &state = state_data[index];
+    float *cursor = out_buffer + index * kFeatureCount;
+
+    const uint64_t field = state.global_field_mask;
+    const bool has_weather =
+        (field & (FieldWeatherSun | FieldWeatherRain | FieldWeatherSand |
+                  FieldWeatherSnow)) != 0;
+    *cursor++ = has_weather ? 0.0f : 1.0f;
+    *cursor++ = (field & FieldWeatherSun) ? 1.0f : 0.0f;
+    *cursor++ = (field & FieldWeatherRain) ? 1.0f : 0.0f;
+    *cursor++ = (field & FieldWeatherSand) ? 1.0f : 0.0f;
+    *cursor++ = (field & FieldWeatherSnow) ? 1.0f : 0.0f;
+
+    const bool has_terrain =
+        (field & (FieldTerrainElectric | FieldTerrainGrassy | FieldTerrainMisty |
+                  FieldTerrainPsychic)) != 0;
+    *cursor++ = has_terrain ? 0.0f : 1.0f;
+    *cursor++ = (field & FieldTerrainElectric) ? 1.0f : 0.0f;
+    *cursor++ = (field & FieldTerrainGrassy) ? 1.0f : 0.0f;
+    *cursor++ = (field & FieldTerrainMisty) ? 1.0f : 0.0f;
+    *cursor++ = (field & FieldTerrainPsychic) ? 1.0f : 0.0f;
+
+    *cursor++ = (field & FieldRoomTrick) ? 1.0f : 0.0f;
+
+    for (std::size_t side = 0; side < kSides; ++side) {
+      const uint64_t hazards = state.hazard_mask[side];
+      *cursor++ = (hazards & HazardStealthRock) ? 1.0f : 0.0f;
+      *cursor++ = (hazards & HazardSpikes1) ? 1.0f : 0.0f;
+      *cursor++ = (hazards & HazardSpikes2) ? 1.0f : 0.0f;
+      *cursor++ = (hazards & HazardSpikes3) ? 1.0f : 0.0f;
+      *cursor++ = (hazards & HazardToxicSpikes1) ? 1.0f : 0.0f;
+      *cursor++ = (hazards & HazardToxicSpikes2) ? 1.0f : 0.0f;
+      *cursor++ = (hazards & HazardStickyWeb) ? 1.0f : 0.0f;
+
+      const SideState &side_state = state.sides[side];
+      const ActiveMon &active = side_state.active;
+
+      uint16_t max_hp = 0;
+      const bool active_valid =
+          active.species_id != 0 && active.species_id < species_count;
+      if (active_valid) {
+        max_hp = max_hp_value(db.base_stats(active.species_id), active.level);
+      }
+      *cursor++ = hp_ratio(active.hp, max_hp);
+      *cursor++ = normalize_species_id(active.species_id, max_species_id);
+
+      TypeID type1 = TypeNone;
+      TypeID type2 = TypeNone;
+      if (active_valid) {
+        const BaseStats &base = db.base_stats(active.species_id);
+        if (active.tera_state & TeraActive) {
+          type1 = active.tera_type < kTypeCount ? active.tera_type : TypeNone;
+          type2 = TypeNone;
+        } else {
+          type1 = base.type1 < kTypeCount ? base.type1 : TypeNone;
+          type2 = base.type2 < kTypeCount ? base.type2 : TypeNone;
+        }
+      }
+      write_type_one_hot(cursor, type1);
+      write_type_one_hot(cursor, type2);
+
+      for (std::size_t stat = 0; stat < StatCount; ++stat) {
+        *cursor++ = normalize_stage(active.stat_stages[stat]);
+      }
+
+      const uint8_t status = active.major_status;
+      *cursor++ = (status & StatusBurn) ? 1.0f : 0.0f;
+      *cursor++ = (status & StatusParalysis) ? 1.0f : 0.0f;
+      *cursor++ = (status & StatusSleep) ? 1.0f : 0.0f;
+      *cursor++ = (status & StatusPoison) ? 1.0f : 0.0f;
+      *cursor++ = (status & StatusToxic) ? 1.0f : 0.0f;
+      *cursor++ = (status & StatusFreeze) ? 1.0f : 0.0f;
+
+      const uint64_t volatiles = active.volatile_mask;
+      *cursor++ = (volatiles & VolatileConfused) ? 1.0f : 0.0f;
+      *cursor++ = (volatiles & VolatileLeechSeed) ? 1.0f : 0.0f;
+      *cursor++ = (volatiles & VolatileEncore) ? 1.0f : 0.0f;
+
+      for (const BenchMon &bench : side_state.bench) {
+        *cursor++ = clamp01(static_cast<float>(bench.hp_percent) / 100.0f);
+        *cursor++ = normalize_species_id(bench.species_id, max_species_id);
+
+        const uint8_t bench_status = bench.status_mask;
+        *cursor++ = (bench_status & StatusBurn) ? 1.0f : 0.0f;
+        *cursor++ = (bench_status & StatusParalysis) ? 1.0f : 0.0f;
+        *cursor++ = (bench_status & StatusSleep) ? 1.0f : 0.0f;
+        *cursor++ = (bench_status & StatusPoison) ? 1.0f : 0.0f;
+        *cursor++ = (bench_status & StatusToxic) ? 1.0f : 0.0f;
+        *cursor++ = (bench_status & StatusFreeze) ? 1.0f : 0.0f;
+      }
+    }
+  }
+}
+
+} // namespace omega9
+
+// --- File: C:\dev\Omega9_Engine\src\engine\mutator.cpp ---
+
+#include "engine/mutator.h"
+
+#include <algorithm>
+#include <limits>
+
+#include "engine/utils.h"
+
+namespace omega9 {
+namespace {
+
+constexpr float kMaxSeed = 0.999999f;
+constexpr uint8_t kPerfectIv = 31;
+constexpr uint8_t kRandbatsEv = 85;
+
+float clamp_seed(float seed) {
+  if (seed < 0.0f) return 0.0f;
+  if (seed > kMaxSeed) return kMaxSeed;
+  return seed;
+}
+
+bool roll_chance(float seed, uint8_t percent) {
+  if (percent == 0) return false;
+  const float threshold = static_cast<float>(percent) * 0.01f;
+  return clamp_seed(seed) < threshold;
+}
+
+uint8_t sleep_turns_from_seed(float seed) {
+  const float clamped = clamp_seed(seed);
+  const int bucket = static_cast<int>(clamped * 3.0f); // 0..2
+  return static_cast<uint8_t>(2 + bucket);
+}
+
+uint8_t confusion_turns_from_seed(float seed) {
+  const float clamped = clamp_seed(seed);
+  const int bucket = static_cast<int>(clamped * 4.0f); // 0..3
+  return static_cast<uint8_t>(2 + bucket);
+}
+
+uint16_t max_hp_value(const BaseStats &base, uint8_t level) {
+  if (level == 0) return 0;
+  const uint32_t ev = kRandbatsEv / 4u;
+  uint32_t value = (2u * base.hp + kPerfectIv + ev);
+  value = (value * level) / 100u;
+  value += static_cast<uint32_t>(level) + 10u;
+  return static_cast<uint16_t>(
+      std::min<uint32_t>(value, std::numeric_limits<uint16_t>::max()));
+}
+
+uint16_t max_hp_for_active(const ActiveMon &active) {
+  if (active.species_id == 0) return 0;
+  const auto &db = StaticDatabase::instance();
+  if (active.species_id >= db.species_count()) return 0;
+  return max_hp_value(db.base_stats(active.species_id), active.level);
+}
+
+bool has_type(const ActiveMon &active, const BaseStats &base, TypeID type) {
+  if (active.tera_state & TeraActive) {
+    return active.tera_type == type;
+  }
+  return base.type1 == type || base.type2 == type;
+}
+
+bool is_status_immune(const ActiveMon &active, const BaseStats &base,
+                      uint8_t status_id) {
+  if ((status_id & StatusParalysis) &&
+      has_type(active, base, TypeElectric)) {
+    return true;
+  }
+  if ((status_id & StatusBurn) && has_type(active, base, TypeFire)) {
+    return true;
+  }
+  if ((status_id & (StatusPoison | StatusToxic)) &&
+      (has_type(active, base, TypePoison) ||
+       has_type(active, base, TypeSteel))) {
+    return true;
+  }
+  if ((status_id & StatusFreeze) && has_type(active, base, TypeIce)) {
+    return true;
+  }
+  return false;
+}
+
+int clamp_stage(int stage) {
+  if (stage > 6) return 6;
+  if (stage < -6) return -6;
+  return stage;
+}
+
+} // namespace
+
+void StateMutator::apply_damage(BattleState &state, uint8_t side,
+                                uint16_t damage, bool is_direct_move_damage,
+                                bool bypass_substitute) {
+  if (side >= kSides) return;
+  ActiveMon &active = state.sides[side].active;
+  if (active.hp == 0) return;
+  if (is_direct_move_damage &&
+      (active.volatile_mask & VolatileSubstitute) != 0 &&
+      !bypass_substitute && active.substitute_hp > 0) {
+    if (damage >= active.substitute_hp) {
+      active.substitute_hp = 0;
+      active.volatile_mask =
+          static_cast<uint64_t>(active.volatile_mask & ~VolatileSubstitute);
+    } else {
+      int sub_hp = static_cast<int>(active.substitute_hp);
+      sub_hp -= static_cast<int>(damage);
+      active.substitute_hp =
+          static_cast<uint16_t>(std::max(0, sub_hp));
+    }
+    return;
+  }
+  if (is_direct_move_damage) {
+    if ((active.volatile_mask & VolatileEndure) && damage >= active.hp) {
+      damage = static_cast<uint16_t>(active.hp - 1u);
+    }
+  }
+  if (is_direct_move_damage && active.item_id == ItemFocusSash) {
+    const uint16_t max_hp = max_hp_for_active(active);
+    if (max_hp > 0 && active.hp == max_hp && damage >= active.hp) {
+      damage = static_cast<uint16_t>(active.hp - 1u);
+      active.item_id = ItemNone;
+    }
+  }
+  if (damage >= active.hp) {
+    active.hp = 0;
+    active.volatile_mask = 0;
+    active.stat_stages.fill(0);
+    active.major_status = 0;
+    active.sleep_turns = 0;
+    active.toxic_turns = 0;
+    active.confusion_turns = 0;
+    active.encore_turns = 0;
+    active.protect_counter = 0;
+    active.choice_move_id = 0;
+    active.substitute_hp = 0;
+    active.reserved.fill(0);
+    return;
+  }
+  active.hp = static_cast<uint16_t>(active.hp - damage);
+}
+
+void StateMutator::apply_status(BattleState &state, uint8_t side,
+                                uint8_t status_id, float random_seed) {
+  if (side >= kSides || status_id == 0) return;
+
+  ActiveMon &active = state.sides[side].active;
+  if (active.major_status != 0) return;
+
+  const auto &db = StaticDatabase::instance();
+  if (active.species_id >= db.species_count()) return;
+  const BaseStats &base = db.base_stats(active.species_id);
+
+  const bool grounded = is_grounded(active, base);
+  if (grounded) {
+    if (state.global_field_mask & FieldTerrainMisty) return;
+    if ((state.global_field_mask & FieldTerrainElectric) &&
+        (status_id & StatusSleep)) {
+      return;
+    }
+  }
+
+  if (is_status_immune(active, base, status_id)) return;
+  if ((status_id & StatusFreeze) &&
+      (state.global_field_mask & FieldWeatherSun)) {
+    return;
+  }
+
+  active.major_status = status_id;
+  active.toxic_turns = 0;
+
+  if (status_id & StatusSleep) {
+    active.sleep_turns = sleep_turns_from_seed(random_seed);
+  } else {
+    active.sleep_turns = 0;
+  }
+}
+
+void StateMutator::apply_boost(BattleState &state, uint8_t side, StatIndex stat,
+                               int amount) {
+  if (side >= kSides) return;
+  if (stat >= StatCount) return;
+  ActiveMon &active = state.sides[side].active;
+  const int stage =
+      clamp_stage(static_cast<int>(active.stat_stages[stat]) + amount);
+  active.stat_stages[stat] = static_cast<int8_t>(stage);
+}
+
+void StateMutator::apply_volatile(BattleState &state, uint8_t side,
+                                  VolatileBits volatile_id,
+                                  float random_seed) {
+  if (side >= kSides) return;
+  ActiveMon &active = state.sides[side].active;
+  if (volatile_id == VolatileConfused) {
+    if (active.volatile_mask & VolatileConfused) {
+      return;
+    }
+    const auto &db = StaticDatabase::instance();
+    if (active.species_id >= db.species_count()) return;
+    const BaseStats &base = db.base_stats(active.species_id);
+    if ((state.global_field_mask & FieldTerrainMisty) &&
+        is_grounded(active, base)) {
+      return;
+    }
+    active.confusion_turns = confusion_turns_from_seed(random_seed);
+  }
+  active.volatile_mask |= static_cast<uint64_t>(volatile_id);
+}
+
+void StateMutator::apply_secondary_effects(BattleState &state,
+                                           uint8_t attacker_side,
+                                           MoveID move_id,
+                                           float random_seed) {
+  if (attacker_side >= kSides) return;
+  const uint8_t defender_side = attacker_side ^ 1u;
+
+  switch (move_id) {
+    case MoveMoonblast:
+      if (roll_chance(random_seed, 30)) {
+        apply_boost(state, defender_side, StatSpa, -1);
+      }
+      break;
+    case MoveShadowBall:
+      if (roll_chance(random_seed, 20)) {
+        apply_boost(state, defender_side, StatSpd, -1);
+      }
+      break;
+    case MoveThunderPunch:
+      if (roll_chance(random_seed, 10)) {
+        apply_status(state, defender_side, StatusParalysis, random_seed);
+      }
+      break;
+    default:
+      break;
+  }
+}
+
+void StateMutator::set_weather(BattleState &state, GlobalFieldBits weather,
+                               uint8_t turns) {
+  const uint64_t weather_mask = FieldWeatherSun | FieldWeatherRain |
+                                FieldWeatherSand | FieldWeatherSnow;
+  state.global_field_mask =
+      static_cast<uint64_t>(state.global_field_mask & ~weather_mask);
+  state.global_field_mask |= static_cast<uint64_t>(weather);
+  state.weather_turns = turns;
+}
+
+void StateMutator::set_terrain(BattleState &state, GlobalFieldBits terrain,
+                               uint8_t turns) {
+  const uint64_t terrain_mask = FieldTerrainElectric | FieldTerrainGrassy |
+                                FieldTerrainMisty | FieldTerrainPsychic;
+  state.global_field_mask =
+      static_cast<uint64_t>(state.global_field_mask & ~terrain_mask);
+  state.global_field_mask |= static_cast<uint64_t>(terrain);
+  state.terrain_turns = turns;
+}
+
+void StateMutator::set_side_condition(BattleState &state, uint8_t side,
+                                      SideConditionBits condition,
+                                      uint8_t turns) {
+  if (side >= kSides) return;
+  SideState &side_state = state.sides[side];
+  const uint16_t mask = static_cast<uint16_t>(condition);
+  side_state.side_condition_mask =
+      static_cast<uint16_t>(side_state.side_condition_mask | mask);
+
+  if (mask & SideConditionTailwind) {
+    side_state.tailwind_turns = turns;
+  }
+  if (mask & SideConditionReflect) {
+    side_state.reflect_turns = turns;
+  }
+  if (mask & SideConditionLightScreen) {
+    side_state.light_screen_turns = turns;
+  }
+  if (mask & SideConditionAuroraVeil) {
+    side_state.aurora_veil_turns = turns;
+  }
+}
+
+} // namespace omega9
+
+// --- File: C:\dev\Omega9_Engine\src\engine\step.cpp ---
+
+#include "engine/step.h"
+
+#include <algorithm>
+#include <cstdint>
+#include <limits>
+
+#include "data/database.h"
+#include "engine/damage.h"
+#include "engine/mutator.h"
+#include "engine/switch.h"
+#include "engine/utils.h"
+
+namespace omega9 {
+namespace {
+
+constexpr float kMaxSeed = 0.999999f;
+
+float clamp_seed(float seed) {
+  if (seed < 0.0f) return 0.0f;
+  if (seed > kMaxSeed) return kMaxSeed;
+  return seed;
+}
+
+struct Rng {
+  uint32_t state;
+  explicit Rng(float seed) {
+    const float clamped = clamp_seed(seed);
+    state = static_cast<uint32_t>(clamped * 4294967295.0f);
+    if (state == 0) {
+      state = 0x6D2B79F5u;
+    }
+  }
+
+  uint32_t next_u32() {
+    state = state * 1664525u + 1013904223u;
+    return state;
+  }
+
+  float next_float() {
+    const uint32_t value = next_u32();
+    return static_cast<float>(value >> 8) * (1.0f / 16777216.0f);
+  }
+};
+
+constexpr uint8_t kPerfectIv = 31;
+constexpr uint8_t kRandbatsEv = 85;
+
+uint16_t max_hp_value(const BaseStats &base, uint8_t level) {
+  if (level == 0) return 0;
+  const uint32_t ev = kRandbatsEv / 4u;
+  uint32_t value = (2u * base.hp + kPerfectIv + ev);
+  value = (value * level) / 100u;
+  value += static_cast<uint32_t>(level) + 10u;
+  return static_cast<uint16_t>(
+      std::min<uint32_t>(value, std::numeric_limits<uint16_t>::max()));
+}
+
+uint16_t max_hp_for_active(const ActiveMon &active) {
+  if (active.species_id == 0) return 0;
+  const auto &db = StaticDatabase::instance();
+  if (active.species_id >= db.species_count()) return 0;
+  return max_hp_value(db.base_stats(active.species_id), active.level);
+}
+
+uint16_t fraction_amount(uint16_t max_hp, uint32_t num, uint32_t den) {
+  if (max_hp == 0 || num == 0 || den == 0) return 0;
+  const uint64_t raw =
+      (static_cast<uint64_t>(max_hp) * static_cast<uint64_t>(num)) /
+      static_cast<uint64_t>(den);
+  return static_cast<uint16_t>(std::min<uint64_t>(
+      raw, static_cast<uint64_t>(std::numeric_limits<uint16_t>::max())));
+}
+
+bool has_type(const ActiveMon &active, const BaseStats &base, TypeID type) {
+  if (active.tera_state & TeraActive) {
+    return active.tera_type == type;
+  }
+  if (base.type1 == type) return true;
+  return base.type2 < kTypeCount && base.type2 == type;
+}
+
+bool check_immunity(const BattleState &state, uint8_t attacker_side,
+                    MoveID move_id) {
+  if (attacker_side >= kSides) return false;
+  const uint8_t defender_side = attacker_side ^ 1u;
+  const auto &db = StaticDatabase::instance();
+  if (move_id == MoveNone || move_id >= db.move_count()) return false;
+
+  const MoveData &move = db.move_data(move_id);
+  if (move.type >= kTypeCount) return true;
+
+  const ActiveMon &defender = state.sides[defender_side].active;
+  if (defender.species_id == 0 || defender.species_id >= db.species_count()) {
+    return true;
+  }
+  const BaseStats &base = db.base_stats(defender.species_id);
+
+  if (move.flags & MoveFlagIgnoreImmunity) {
+    return true;
+  }
+
+  auto is_immune = [&](TypeID defender_type) -> bool {
+    return db.type_multiplier(move.type, defender_type) == 0.0f;
+  };
+
+  if (defender.tera_state & TeraActive) {
+    return !is_immune(defender.tera_type);
+  }
+
+  if (base.type1 < kTypeCount && is_immune(base.type1)) return false;
+  if (base.type2 < kTypeCount && is_immune(base.type2)) return false;
+
+  return true;
+}
+
+bool is_choice_item(ItemID item_id) {
+  return item_id == ItemChoiceBand || item_id == ItemChoiceSpecs ||
+         item_id == ItemChoiceScarf;
+}
+
+bool has_magic_guard(const ActiveMon &) {
+  return false;
+}
+
+void apply_fractional_damage(BattleState &state, uint8_t side, uint32_t num,
+                             uint32_t den) {
+  if (side >= kSides) return;
+  ActiveMon &active = state.sides[side].active;
+  if (active.hp == 0) return;
+  const uint16_t max_hp = max_hp_for_active(active);
+  uint16_t damage = fraction_amount(max_hp, num, den);
+  if (damage == 0) damage = 1;
+  StateMutator::apply_damage(state, side, damage, false, false);
+}
+
+void apply_fractional_heal(BattleState &state, uint8_t side, uint32_t num,
+                           uint32_t den) {
+  if (side >= kSides) return;
+  ActiveMon &active = state.sides[side].active;
+  if (active.hp == 0) return;
+  const uint16_t max_hp = max_hp_for_active(active);
+  uint16_t heal = fraction_amount(max_hp, num, den);
+  if (heal == 0 && max_hp > 0 && num > 0) heal = 1;
+  if (heal == 0) return;
+  const uint32_t combined = static_cast<uint32_t>(active.hp) + heal;
+  active.hp = static_cast<uint16_t>(
+      std::min<uint32_t>(combined, static_cast<uint32_t>(max_hp)));
+}
+
+uint32_t apply_fraction(uint32_t value, uint32_t num, uint32_t den) {
+  if (den == 0) return 0;
+  return static_cast<uint32_t>((static_cast<uint64_t>(value) * num) / den);
+}
+
+uint16_t apply_stage(uint16_t stat, int stage) {
+  if (stage > 6) stage = 6;
+  if (stage < -6) stage = -6;
+  if (stage >= 0) {
+    const uint32_t num = static_cast<uint32_t>(2 + stage);
+    return static_cast<uint16_t>((static_cast<uint32_t>(stat) * num) / 2u);
+  }
+  const uint32_t den = static_cast<uint32_t>(2 + (-stage));
+  return static_cast<uint16_t>((static_cast<uint32_t>(stat) * 2u) / den);
+}
+
+uint16_t confusion_self_hit_damage(const ActiveMon &active,
+                                   const BaseStats &base) {
+  if (active.level == 0) return 0;
+  uint16_t attack_value = get_real_stat(base, StatAtk, active.level);
+  uint16_t defense_value = get_real_stat(base, StatDef, active.level);
+  if (attack_value == 0 || defense_value == 0) return 0;
+
+  const int attack_stage =
+      clamp_stage(static_cast<int>(active.stat_stages[StatAtk]));
+  const int defense_stage =
+      clamp_stage(static_cast<int>(active.stat_stages[StatDef]));
+  attack_value = apply_stage(attack_value, attack_stage);
+  defense_value = apply_stage(defense_value, defense_stage);
+  if (defense_value == 0) return 0;
+
+  constexpr uint32_t kPower = 40u;
+  uint32_t damage = (2u * active.level) / 5u + 2u;
+  uint64_t base_damage =
+      static_cast<uint64_t>(damage) * kPower * attack_value;
+  base_damage /= defense_value;
+  base_damage /= 50u;
+  base_damage += 2u;
+  const uint32_t capped = static_cast<uint32_t>(std::min<uint64_t>(
+      base_damage, static_cast<uint64_t>(std::numeric_limits<uint16_t>::max())));
+  return static_cast<uint16_t>(capped);
+}
+
+Action fallback_action(const BattleState &state, uint8_t side,
+                       const Action &action) {
+  Action normalized = action;
+  normalized.side = side;
+
+  if (normalized.is_switch()) {
+    if (is_valid_action(state, normalized)) return normalized;
+    for (BenchSlotIndex slot = 0; slot < kBenchSize; ++slot) {
+      Action candidate = Action::make_switch(side, slot);
+      if (is_valid_action(state, candidate)) return candidate;
+    }
+  }
+
+  if (normalized.is_move()) {
+    if (is_valid_action(state, normalized)) return normalized;
+  }
+
+  const ActiveMon &active = state.sides[side].active;
+  for (std::size_t i = 0; i < active.moves.size(); ++i) {
+    const MoveID move_id = active.moves[i];
+    if (move_id == MoveNone) continue;
+    if (active.pp[i] == 0) continue;
+    Action candidate = Action::make_move(side, move_id, normalized.is_tera());
+    if (is_valid_action(state, candidate)) return candidate;
+    if (normalized.is_tera()) {
+      candidate = Action::make_move(side, move_id, false);
+      if (is_valid_action(state, candidate)) return candidate;
+    }
+  }
+  return Action::make_move(side, MoveStruggle, false);
+}
+
+bool check_cant_move_free(BattleState &state, uint8_t side,
+                          const MoveData &move, Rng &rng) {
+  if (side >= kSides) return true;
+  ActiveMon &active = state.sides[side].active;
+  if (active.hp == 0) return true;
+
+  if (active.major_status & StatusSleep) {
+    if (active.sleep_turns > 0) {
+      active.sleep_turns = static_cast<uint8_t>(active.sleep_turns - 1);
+      if (active.sleep_turns == 0) {
+        active.major_status =
+            static_cast<uint8_t>(active.major_status & ~StatusSleep);
+      } else {
+        return true;
+      }
+    } else {
+      active.major_status =
+          static_cast<uint8_t>(active.major_status & ~StatusSleep);
+    }
+  }
+
+  if (active.major_status & StatusFreeze) {
+    if (move.flags & MoveFlagDefrost) {
+      active.major_status =
+          static_cast<uint8_t>(active.major_status & ~StatusFreeze);
+      return false;
+    }
+    const float thaw_roll = rng.next_float();
+    if (thaw_roll < 0.2f) {
+      active.major_status =
+          static_cast<uint8_t>(active.major_status & ~StatusFreeze);
+    } else {
+      return true;
+    }
+  }
+
+  if (active.volatile_mask & VolatileFlinch) return true;
+
+  return false;
+}
+
+bool check_cant_move_costly(BattleState &state, uint8_t side, Rng &rng) {
+  if (side >= kSides) return true;
+  ActiveMon &active = state.sides[side].active;
+  if (active.hp == 0) return true;
+
+  if (active.volatile_mask & VolatileConfused) {
+    if (active.confusion_turns > 0) {
+      active.confusion_turns =
+          static_cast<uint8_t>(active.confusion_turns - 1);
+    }
+    if (active.confusion_turns == 0) {
+      active.volatile_mask =
+          static_cast<uint64_t>(active.volatile_mask & ~VolatileConfused);
+    } else {
+      if ((rng.next_u32() % 100u) < 33u) {
+        const auto &db = StaticDatabase::instance();
+        if (active.species_id < db.species_count()) {
+          const BaseStats &base = db.base_stats(active.species_id);
+          uint32_t damage = confusion_self_hit_damage(active, base);
+          const uint32_t roll = 85u + (rng.next_u32() % 16u);
+          damage = apply_fraction(damage, roll, 100u);
+          StateMutator::apply_damage(state, side,
+                                     static_cast<uint16_t>(damage), true,
+                                     true);
+        }
+        return true;
+      }
+    }
+  }
+
+  if (active.major_status & StatusParalysis) {
+    const float para_roll = rng.next_float();
+    if (para_roll < 0.25f) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+uint16_t select_damage_roll(const DamageResult &result, float roll_sample) {
+  const std::size_t size = result.rolls.size();
+  std::size_t index =
+      static_cast<std::size_t>(roll_sample * static_cast<float>(size));
+  if (index >= size) index = size - 1;
+  return result.rolls[index];
+}
+
+float calculate_crit_chance(const MoveData &move, const ActiveMon &attacker) {
+  int stage = static_cast<int>(move.crit_ratio);
+  if (attacker.volatile_mask & VolatileFocusEnergy) {
+    stage += 2;
+  }
+
+  if (stage <= 0) return 1.0f / 24.0f;
+  if (stage == 1) return 1.0f / 8.0f;
+  if (stage == 2) return 0.5f;
+  return 1.0f;
+}
+
+uint8_t resolve_hit_count(const MoveData &move, Rng &rng) {
+  uint8_t min_hits = move.min_hits;
+  uint8_t max_hits = move.max_hits;
+  if (min_hits == 0) min_hits = 1;
+  if (max_hits == 0) max_hits = min_hits;
+  if (max_hits < min_hits) std::swap(max_hits, min_hits);
+  if (min_hits == max_hits) return min_hits;
+
+  if (min_hits == 2 && max_hits == 5) {
+    const float roll = rng.next_float();
+    if (roll < 0.35f) return 2;
+    if (roll < 0.70f) return 3;
+    if (roll < 0.85f) return 4;
+    return 5;
+  }
+
+  const uint16_t range =
+      static_cast<uint16_t>(max_hits - min_hits) + 1u;
+  const uint16_t offset =
+      static_cast<uint16_t>(rng.next_u32() % range);
+  return static_cast<uint8_t>(min_hits + offset);
+}
+
+int find_move_slot(const ActiveMon &active, MoveID move_id) {
+  for (std::size_t i = 0; i < active.moves.size(); ++i) {
+    if (active.moves[i] == move_id) {
+      return static_cast<int>(i);
+    }
+  }
+  return -1;
+}
+
+bool check_interruption(const BattleState &state, uint8_t attacker_side,
+                        uint8_t defender_side, MoveID move_id) {
+  static_cast<void>(attacker_side);
+  if (defender_side >= kSides) return false;
+  const auto &db = StaticDatabase::instance();
+  if (move_id == MoveNone || move_id >= db.move_count()) return false;
+
+  const ActiveMon &defender = state.sides[defender_side].active;
+  const MoveData &move = db.move_data(move_id);
+
+  if (defender.volatile_mask & VolatileSubstitute) {
+    if (move.category == MoveStatus &&
+        !(move.flags & (MoveFlagSound | MoveFlagBypassSubstitute))) {
+      return true;
+    }
+  }
+
+  if (defender.volatile_mask & VolatileProtect) {
+    if (!(move.flags & MoveFlagBypassProtect)) {
+      return true;
+    }
+  }
+
+  if (defender.volatile_mask & VolatileFlying) {
+    if (!(move.flags & MoveFlagHitsFlying)) {
+      return true;
+    }
+  }
+
+  if (defender.volatile_mask & VolatileDigging) {
+    if (!(move.flags & MoveFlagHitsDigging)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+bool execute_move(BattleState &state, const Action &action, Rng &rng) {
+  const uint8_t attacker_side = action.side;
+  if (attacker_side >= kSides) return false;
+  SideState &attacker_state = state.sides[attacker_side];
+  ActiveMon &attacker = attacker_state.active;
+  const MoveID move_id = action.move_id();
+  const bool is_protect = (move_id == MoveProtect);
+  if (!is_protect) {
+    attacker.protect_counter = 0;
+  }
+
+  if (action.is_tera() &&
+      !(attacker_state.side_condition_mask & SideConditionTeraUsed)) {
+    attacker_state.side_condition_mask |= SideConditionTeraUsed;
+    attacker.tera_state =
+        static_cast<uint8_t>(attacker.tera_state | TeraActive);
+  }
+
+  const uint8_t defender_side = attacker_side ^ 1u;
+
+  if (state.sides[defender_side].active.hp == 0) {
+    return true;
+  }
+
+  const auto &db = StaticDatabase::instance();
+  if (move_id == MoveNone || move_id >= db.move_count()) return false;
+  const MoveData &move = db.move_data(move_id);
+  const bool is_struggle = (move_id == MoveStruggle);
+
+  int move_slot = -1;
+  if (!is_struggle) {
+    move_slot = find_move_slot(attacker, move_id);
+    if (move_slot < 0) return false;
+    if (attacker.pp[move_slot] == 0) return false;
+  }
+
+  if (check_cant_move_free(state, attacker_side, move, rng)) return false;
+
+  if (check_cant_move_costly(state, attacker_side, rng)) return false;
+
+  if (!is_struggle) {
+    attacker.pp[move_slot] = static_cast<uint8_t>(attacker.pp[move_slot] - 1);
+  }
+
+  if (is_choice_item(attacker.item_id) && move_id != MoveStruggle) {
+    attacker.choice_move_id = move_id;
+  }
+
+  if (is_protect) {
+    float protect_chance = 1.0f;
+    for (uint8_t i = 0; i < attacker.protect_counter; ++i) {
+      protect_chance /= 3.0f;
+    }
+    const float roll = rng.next_float();
+    if (roll < protect_chance) {
+      StateMutator::apply_volatile(state, attacker_side, VolatileProtect,
+                                   rng.next_float());
+      if (attacker.protect_counter <
+          std::numeric_limits<uint8_t>::max()) {
+        attacker.protect_counter =
+            static_cast<uint8_t>(attacker.protect_counter + 1);
+      }
+    } else {
+      attacker.protect_counter = 0;
+    }
+    return false;
+  }
+
+  if ((state.global_field_mask & FieldTerrainPsychic) &&
+      move.priority > 0) {
+    ActiveMon &defender = state.sides[defender_side].active;
+    if (defender.species_id != 0 && defender.species_id < db.species_count()) {
+      const BaseStats &defender_base = db.base_stats(defender.species_id);
+      if (is_grounded(defender, defender_base) &&
+          !(move.flags & MoveFlagTargetSelf)) {
+        return false;
+      }
+    }
+  }
+
+  if (!(move.flags & MoveFlagTargetSelf)) {
+    if (!check_immunity(state, attacker_side, move_id)) {
+      return false;
+    }
+
+    if (check_interruption(state, attacker_side, defender_side, move_id)) {
+      return false; // Move blocked by Protect or invulnerability.
+    }
+  }
+
+  if (!(move.flags & MoveFlagTargetSelf)) {
+    const uint8_t accuracy = move.accuracy;
+    if (accuracy > 0) {
+      uint32_t threshold = accuracy;
+      int net_stage =
+          static_cast<int>(attacker.stat_stages[StatAcc]) -
+          static_cast<int>(
+              state.sides[defender_side].active.stat_stages[StatEva]);
+      if (net_stage > 6) net_stage = 6;
+      if (net_stage < -6) net_stage = -6;
+
+      uint32_t acc_num = 3u;
+      uint32_t acc_den = 3u;
+      if (net_stage >= 0) {
+        acc_num = static_cast<uint32_t>(3 + net_stage);
+      } else {
+        acc_den = static_cast<uint32_t>(3 + (-net_stage));
+      }
+      threshold = apply_fraction(threshold, acc_num, acc_den);
+
+      const uint32_t roll = rng.next_u32() % 100u;
+      if (roll >= threshold) {
+        return false;
+      }
+    }
+  }
+
+  ActiveMon &defender = state.sides[defender_side].active;
+  const float crit_chance = calculate_crit_chance(move, attacker);
+  const uint8_t hit_count = resolve_hit_count(move, rng);
+  const bool hits_sub =
+      (defender.volatile_mask & VolatileSubstitute) &&
+      !(move.flags & (MoveFlagSound | MoveFlagBypassSubstitute));
+  const bool bypass_substitute =
+      (move.flags & (MoveFlagSound | MoveFlagBypassSubstitute)) != 0;
+  bool any_hit_face = false;
+  bool dealt_damage = false;
+  for (uint8_t hit = 0; hit < hit_count; ++hit) {
+    if (state.sides[defender_side].active.hp == 0) break;
+    const bool current_hit_blocked =
+        (defender.volatile_mask & VolatileSubstitute) && !bypass_substitute;
+    if (!current_hit_blocked) {
+      any_hit_face = true;
+    }
+    const bool is_crit = crit_chance >= 1.0f || rng.next_float() < crit_chance;
+    const DamageResult damage = calculate_damage(state, attacker_side, move_id,
+                                                 is_crit);
+    const uint16_t roll = select_damage_roll(damage, rng.next_float());
+    if (roll > 0) {
+      dealt_damage = true;
+    }
+    StateMutator::apply_damage(state, defender_side, roll, true,
+                               !current_hit_blocked);
+    if (state.sides[defender_side].active.hp == 0) break;
+  }
+
+  if (!hits_sub && move.category == MoveStatus && move.primary_status != 0) {
+    StateMutator::apply_status(state, defender_side, move.primary_status,
+                               rng.next_float());
+  }
+
+  if (is_struggle) {
+    const uint16_t max_hp = max_hp_for_active(attacker);
+    const uint16_t recoil =
+        std::max<uint16_t>(1u, static_cast<uint16_t>(max_hp / 4u));
+    StateMutator::apply_damage(state, attacker_side, recoil, false, false);
+  }
+
+  if (dealt_damage && attacker.item_id == ItemLifeOrb &&
+      !has_magic_guard(attacker)) {
+    const uint16_t max_hp = max_hp_for_active(attacker);
+    const uint16_t recoil =
+        std::max<uint16_t>(1u, static_cast<uint16_t>(max_hp / 10u));
+    StateMutator::apply_damage(state, attacker_side, recoil, false, false);
+  }
+
+  if (defender.major_status & StatusFreeze) {
+    const bool defrosts =
+        (move.type == TypeFire && move.category != MoveStatus);
+    if (any_hit_face && defrosts) {
+      defender.major_status =
+          static_cast<uint8_t>(defender.major_status & ~StatusFreeze);
+    }
+  }
+
+  if ((move.category == MoveStatus || dealt_damage) && defender.hp > 0 &&
+      any_hit_face) {
+    StateMutator::apply_secondary_effects(state, attacker_side, move_id,
+                                          rng.next_float());
+  }
+
+  return state.sides[defender_side].active.hp == 0;
+}
+
+bool execute_action(BattleState &state, const Action &action, Rng &rng) {
+  if (action.is_switch()) {
+    execute_switch(state, action.side, action.bench_index());
+    apply_entry_hazards(state, action.side);
+    return state.sides[action.side].active.hp == 0;
+  }
+  return execute_move(state, action, rng);
+}
+
+void apply_weather_damage(BattleState &state) {
+  const bool sandstorm = (state.global_field_mask & FieldWeatherSand) != 0;
+
+  if (!sandstorm) return;
+
+  const auto &db = StaticDatabase::instance();
+
+  for (uint8_t side = 0; side < kSides; ++side) {
+    ActiveMon &active = state.sides[side].active;
+    if (active.hp == 0) continue;
+    if (active.species_id == 0 || active.species_id >= db.species_count()) {
+      continue;
+    }
+    const BaseStats &base = db.base_stats(active.species_id);
+    bool immune = false;
+    immune = has_type(active, base, TypeRock) ||
+             has_type(active, base, TypeGround) ||
+             has_type(active, base, TypeSteel);
+    if (!immune) {
+      apply_fractional_damage(state, side, 1u, 16u);
+    }
+  }
+}
+
+void apply_status_damage(BattleState &state) {
+  for (uint8_t side = 0; side < kSides; ++side) {
+    ActiveMon &active = state.sides[side].active;
+    if (active.hp == 0) continue;
+
+    const uint8_t status = active.major_status;
+    if (status & StatusBurn) {
+      apply_fractional_damage(state, side, 1u, 16u);
+    } else if (status & StatusPoison) {
+      apply_fractional_damage(state, side, 1u, 8u);
+    } else if (status & StatusToxic) {
+      const uint16_t max_hp = max_hp_for_active(active);
+      uint16_t base = static_cast<uint16_t>(max_hp / 16u);
+      if (base < 1u) base = 1u;
+      const uint8_t turns =
+          std::min<uint8_t>(static_cast<uint8_t>(active.toxic_turns + 1), 15u);
+      const uint16_t damage =
+          static_cast<uint16_t>(base * static_cast<uint16_t>(turns));
+      StateMutator::apply_damage(state, side, damage, false, false);
+    }
+  }
+}
+
+void apply_leftovers(BattleState &state) {
+  const auto &db = StaticDatabase::instance();
+  const bool grassy =
+      (state.global_field_mask & FieldTerrainGrassy) != 0;
+  for (uint8_t side = 0; side < kSides; ++side) {
+    ActiveMon &active = state.sides[side].active;
+    if (active.hp == 0) continue;
+    if (active.item_id == ItemLeftovers) {
+      apply_fractional_heal(state, side, 1u, 16u);
+    }
+    if (grassy && active.species_id != 0 &&
+        active.species_id < db.species_count()) {
+      const BaseStats &base = db.base_stats(active.species_id);
+      if (is_grounded(active, base)) {
+        apply_fractional_heal(state, side, 1u, 16u);
+      }
+    }
+  }
+}
+
+void decrement_counters(BattleState &state) {
+  if (state.weather_turns > 0) {
+    state.weather_turns = static_cast<uint8_t>(state.weather_turns - 1);
+    if (state.weather_turns == 0) {
+      const uint64_t weather_mask = FieldWeatherSun | FieldWeatherRain |
+                                    FieldWeatherSand | FieldWeatherSnow;
+      state.global_field_mask =
+          static_cast<uint64_t>(state.global_field_mask & ~weather_mask);
+    }
+  }
+
+  if (state.terrain_turns > 0) {
+    state.terrain_turns = static_cast<uint8_t>(state.terrain_turns - 1);
+    if (state.terrain_turns == 0) {
+      const uint64_t terrain_mask = FieldTerrainElectric | FieldTerrainGrassy |
+                                    FieldTerrainMisty | FieldTerrainPsychic;
+      state.global_field_mask =
+          static_cast<uint64_t>(state.global_field_mask & ~terrain_mask);
+    }
+  }
+
+  if (state.trick_room_turns > 0) {
+    state.trick_room_turns = static_cast<uint8_t>(state.trick_room_turns - 1);
+    if (state.trick_room_turns == 0) {
+      state.global_field_mask = static_cast<uint64_t>(
+          state.global_field_mask & ~static_cast<uint64_t>(FieldRoomTrick));
+    }
+  }
+
+  for (uint8_t side = 0; side < kSides; ++side) {
+    SideState &side_state = state.sides[side];
+    if (side_state.tailwind_turns > 0) {
+      side_state.tailwind_turns =
+          static_cast<uint8_t>(side_state.tailwind_turns - 1);
+      if (side_state.tailwind_turns == 0) {
+        side_state.side_condition_mask = static_cast<uint16_t>(
+            side_state.side_condition_mask &
+            static_cast<uint16_t>(~SideConditionTailwind));
+      }
+    }
+    if (side_state.reflect_turns > 0) {
+      side_state.reflect_turns =
+          static_cast<uint8_t>(side_state.reflect_turns - 1);
+      if (side_state.reflect_turns == 0) {
+        side_state.side_condition_mask = static_cast<uint16_t>(
+            side_state.side_condition_mask &
+            static_cast<uint16_t>(~SideConditionReflect));
+      }
+    }
+    if (side_state.light_screen_turns > 0) {
+      side_state.light_screen_turns =
+          static_cast<uint8_t>(side_state.light_screen_turns - 1);
+      if (side_state.light_screen_turns == 0) {
+        side_state.side_condition_mask = static_cast<uint16_t>(
+            side_state.side_condition_mask &
+            static_cast<uint16_t>(~SideConditionLightScreen));
+      }
+    }
+    if (side_state.aurora_veil_turns > 0) {
+      side_state.aurora_veil_turns =
+          static_cast<uint8_t>(side_state.aurora_veil_turns - 1);
+      if (side_state.aurora_veil_turns == 0) {
+        side_state.side_condition_mask = static_cast<uint16_t>(
+            side_state.side_condition_mask &
+            static_cast<uint16_t>(~SideConditionAuroraVeil));
+      }
+    }
+    side_state.active.volatile_mask &=
+        ~static_cast<uint64_t>(VolatileFlinch | VolatileProtect |
+                               VolatileEndure);
+  }
+}
+
+void update_status_counters(BattleState &state) {
+  for (uint8_t side = 0; side < kSides; ++side) {
+    ActiveMon &active = state.sides[side].active;
+    if (active.major_status & StatusToxic) {
+      if (active.toxic_turns < std::numeric_limits<uint8_t>::max()) {
+        active.toxic_turns = static_cast<uint8_t>(active.toxic_turns + 1);
+      }
+    } else {
+      active.toxic_turns = 0;
+    }
+  }
+}
+
+bool bench_has_alive(const SideState &side) {
+  for (const BenchMon &bench : side.bench) {
+    if (bench.species_id == 0) continue;
+    if (bench.hp_percent > 0) return true;
+  }
+  return false;
+}
+
+bool side_has_alive(const SideState &side) {
+  if (side.active.hp > 0) return true;
+  return bench_has_alive(side);
+}
+
+} // namespace
+
+std::pair<BattleState, float> step(const BattleState &state, Action p1_action,
+                                   Action p2_action, float random_seed) {
+  BattleState next_state = state;
+
+  if (next_state.force_switch_mask != 0) {
+    const uint8_t mask = next_state.force_switch_mask;
+    if (mask & 1u) {
+      Action normalized = p1_action;
+      normalized.side = 0;
+      Action switch_action = normalized;
+      if (!normalized.is_switch() ||
+          !is_valid_action(next_state, normalized)) {
+        switch_action = get_switch_action(next_state, 0);
+      }
+      if (switch_action.is_switch()) {
+        execute_switch(next_state, 0, switch_action.bench_index());
+        apply_entry_hazards(next_state, 0);
+      }
+      next_state.force_switch_mask = static_cast<uint8_t>(
+          next_state.force_switch_mask & static_cast<uint8_t>(~1u));
+    }
+    if (mask & 2u) {
+      Action normalized = p2_action;
+      normalized.side = 1;
+      Action switch_action = normalized;
+      if (!normalized.is_switch() ||
+          !is_valid_action(next_state, normalized)) {
+        switch_action = get_switch_action(next_state, 1);
+      }
+      if (switch_action.is_switch()) {
+        execute_switch(next_state, 1, switch_action.bench_index());
+        apply_entry_hazards(next_state, 1);
+      }
+      next_state.force_switch_mask = static_cast<uint8_t>(
+          next_state.force_switch_mask & static_cast<uint8_t>(~2u));
+    }
+    next_state.force_switch_mask = 0;
+    return {next_state, 0.0f};
+  }
+
+  p1_action = fallback_action(state, 0, p1_action);
+  p2_action = fallback_action(state, 1, p2_action);
+
+  Rng rng(random_seed);
+  const bool p1_first =
+      goes_first(next_state, p1_action, p2_action, rng.next_float());
+
+  const Action first_action = p1_first ? p1_action : p2_action;
+  const Action second_action = p1_first ? p2_action : p1_action;
+
+  const bool target_fainted = execute_action(next_state, first_action, rng);
+  if (!target_fainted) {
+    execute_action(next_state, second_action, rng);
+  }
+
+  apply_weather_damage(next_state);
+  apply_leftovers(next_state);
+  apply_status_damage(next_state);
+  update_status_counters(next_state);
+  decrement_counters(next_state);
+
+  next_state.force_switch_mask = 0;
+  if (next_state.sides[0].active.hp == 0 &&
+      bench_has_alive(next_state.sides[0])) {
+    next_state.force_switch_mask |= 1u;
+  }
+  if (next_state.sides[1].active.hp == 0 &&
+      bench_has_alive(next_state.sides[1])) {
+    next_state.force_switch_mask |= 2u;
+  }
+
+  const bool p1_alive = side_has_alive(next_state.sides[0]);
+  const bool p2_alive = side_has_alive(next_state.sides[1]);
+
+  float reward = 0.0f;
+  if (p1_alive && !p2_alive) {
+    reward = 1.0f;
+  } else if (!p1_alive && p2_alive) {
+    reward = -1.0f;
+  }
+
+  return {next_state, reward};
+}
+
+} // namespace omega9
+
+// --- File: C:\dev\Omega9_Engine\src\engine\switch.cpp ---
+
+#include "engine/switch.h"
+
+#include <algorithm>
+#include <cstdint>
+#include <limits>
+
+#include "data/database.h"
+#include "engine/mutator.h"
+#include "engine/utils.h"
+
+namespace omega9 {
+namespace {
+
+constexpr uint8_t kPerfectIv = 31;
+constexpr uint8_t kRandbatsEv = 85;
+
+uint16_t max_hp_value(const BaseStats &base, uint8_t level) {
+  if (level == 0) return 0;
+  const uint32_t ev = kRandbatsEv / 4u;
+  uint32_t value = (2u * base.hp + kPerfectIv + ev);
+  value = (value * level) / 100u;
+  value += static_cast<uint32_t>(level) + 10u;
+  return static_cast<uint16_t>(
+      std::min<uint32_t>(value, std::numeric_limits<uint16_t>::max()));
+}
+
+uint8_t hp_percent_from_hp(uint16_t hp, uint16_t max_hp) {
+  if (max_hp == 0 || hp == 0) return 0;
+  uint32_t percent =
+      (static_cast<uint32_t>(hp) * 100u + max_hp - 1u) / max_hp;
+  if (percent > 100u) percent = 100u;
+  return static_cast<uint8_t>(percent);
+}
+
+uint16_t hp_from_percent(uint8_t percent, uint16_t max_hp) {
+  if (max_hp == 0 || percent == 0) return 0;
+  uint32_t hp = (static_cast<uint32_t>(max_hp) * percent) / 100u;
+  if (hp == 0) hp = 1;
+  if (hp > max_hp) hp = max_hp;
+  return static_cast<uint16_t>(hp);
+}
+
+bool has_type(const ActiveMon &active, const BaseStats &base, TypeID type) {
+  if (active.tera_state & TeraActive) {
+    return active.tera_type == type;
+  }
+  if (base.type1 == type) return true;
+  return base.type2 < kTypeCount && base.type2 == type;
+}
+
+void apply_type_multiplier(const StaticDatabase &db, TypeID move_type,
+                           TypeID defender_type, uint32_t &num, uint32_t &den,
+                           bool &zero_out) {
+  if (defender_type >= kTypeCount || zero_out) return;
+  const float mult = db.type_multiplier(move_type, defender_type);
+  if (mult == 0.0f) {
+    zero_out = true;
+    return;
+  }
+  if (mult == 0.5f) {
+    den *= 2u;
+  } else if (mult == 2.0f) {
+    num *= 2u;
+  }
+}
+
+uint16_t fraction_damage(uint16_t max_hp, uint32_t num, uint32_t den) {
+  if (max_hp == 0 || num == 0 || den == 0) return 0;
+  const uint64_t raw =
+      (static_cast<uint64_t>(max_hp) * static_cast<uint64_t>(num)) /
+      static_cast<uint64_t>(den);
+  const uint64_t clamped = (raw == 0) ? 1u : raw;
+  return static_cast<uint16_t>(std::min<uint64_t>(
+      clamped, static_cast<uint64_t>(std::numeric_limits<uint16_t>::max())));
+}
+
+bool has_heavy_duty_boots(const ActiveMon &active) {
+  return active.item_id == ItemHeavyDutyBoots;
+}
+
+bool has_magic_guard(const ActiveMon &) {
+  return false;
+}
+
+int spikes_layers(uint64_t hazard_mask) {
+  if (hazard_mask & HazardSpikes3) return 3;
+  if (hazard_mask & HazardSpikes2) return 2;
+  if (hazard_mask & HazardSpikes1) return 1;
+  return 0;
+}
+
+int toxic_spikes_layers(uint64_t hazard_mask) {
+  if (hazard_mask & HazardToxicSpikes2) return 2;
+  if (hazard_mask & HazardToxicSpikes1) return 1;
+  return 0;
+}
+
+} // namespace
+
+void execute_switch(BattleState &state, uint8_t side, BenchSlotIndex slot) {
+  if (side >= kSides || slot >= kBenchSize) return;
+
+  SideState &side_state = state.sides[side];
+  ActiveMon &active = side_state.active;
+  BenchMon &bench = side_state.bench[slot];
+
+  if (bench.species_id == 0) return;
+
+  const auto &db = StaticDatabase::instance();
+  if (bench.species_id >= db.species_count()) return;
+
+  uint16_t active_max_hp = 0;
+  if (active.species_id != 0 && active.species_id < db.species_count()) {
+    active_max_hp =
+        max_hp_value(db.base_stats(active.species_id), active.level);
+  }
+  const uint16_t bench_max_hp =
+      max_hp_value(db.base_stats(bench.species_id), bench.level);
+
+  const uint8_t active_percent = hp_percent_from_hp(active.hp, active_max_hp);
+  const uint16_t incoming_hp = hp_from_percent(bench.hp_percent, bench_max_hp);
+
+  BenchMon outgoing{};
+  outgoing.species_id = active.species_id;
+  outgoing.level = active.level;
+  outgoing.hp_percent = active_percent;
+  outgoing.status_mask = active.major_status;
+  outgoing.sleep_turns = active.sleep_turns;
+  outgoing.tera_type = active.tera_type;
+  outgoing.tera_state = active.tera_state;
+  outgoing.item_id = active.item_id;
+  outgoing.moves = active.moves;
+  outgoing.pp = active.pp;
+
+  active.species_id = bench.species_id;
+  active.level = bench.level;
+  active.hp = incoming_hp;
+  active.item_id = bench.item_id;
+  active.choice_move_id = 0;
+  active.major_status = bench.status_mask;
+  active.sleep_turns = bench.sleep_turns;
+  active.toxic_turns = 0;
+  active.tera_type = bench.tera_type;
+  active.tera_state = bench.tera_state;
+  active.moves = bench.moves;
+  active.pp = bench.pp;
+
+  active.volatile_mask = 0;
+  active.stat_stages.fill(0);
+  active.confusion_turns = 0;
+  active.encore_turns = 0;
+  active.protect_counter = 0;
+  active.reserved.fill(0);
+
+  bench = outgoing;
+}
+
+void apply_entry_hazards(BattleState &state, uint8_t side) {
+  if (side >= kSides) return;
+
+  SideState &side_state = state.sides[side];
+  ActiveMon &active = side_state.active;
+
+  if (active.species_id == 0) return;
+
+  const auto &db = StaticDatabase::instance();
+  if (active.species_id >= db.species_count()) return;
+
+  if (has_heavy_duty_boots(active)) return;
+
+  const BaseStats &base = db.base_stats(active.species_id);
+  uint64_t &hazards = state.hazard_mask[side];
+
+  const bool magic_guard = has_magic_guard(active);
+  const bool grounded = is_grounded(active, base);
+
+  const bool has_damage_hazards =
+      (hazards & HazardStealthRock) ||
+      (hazards & (HazardSpikes1 | HazardSpikes2 | HazardSpikes3));
+  uint16_t max_hp = 0;
+  if (has_damage_hazards && !magic_guard) {
+    max_hp = max_hp_value(base, active.level);
+  }
+
+  if ((hazards & HazardStealthRock) && !magic_guard) {
+    uint32_t type_num = 1u;
+    uint32_t type_den = 1u;
+    bool zero_out = false;
+    if (active.tera_state & TeraActive) {
+      apply_type_multiplier(db, TypeRock, active.tera_type, type_num, type_den,
+                            zero_out);
+    } else {
+      apply_type_multiplier(db, TypeRock, base.type1, type_num, type_den,
+                            zero_out);
+      if (base.type2 < kTypeCount) {
+        apply_type_multiplier(db, TypeRock, base.type2, type_num, type_den,
+                              zero_out);
+      }
+    }
+    if (!zero_out) {
+      const uint16_t damage =
+          fraction_damage(max_hp, type_num, 8u * type_den);
+      StateMutator::apply_damage(state, side, damage, false, false);
+      if (active.hp == 0) return;
+    }
+  }
+
+  const int layers = spikes_layers(hazards);
+  if (layers > 0 && grounded && !magic_guard) {
+    uint32_t num = 1u;
+    uint32_t den = 8u;
+    if (layers == 2) {
+      den = 6u;
+    } else if (layers >= 3) {
+      den = 4u;
+    }
+    const uint16_t damage = fraction_damage(max_hp, num, den);
+    StateMutator::apply_damage(state, side, damage, false, false);
+    if (active.hp == 0) return;
+  }
+
+  const int toxic_layers = toxic_spikes_layers(hazards);
+  if (toxic_layers > 0) {
+    if (grounded) {
+      const bool poison_type = has_type(active, base, TypePoison);
+      if (poison_type) {
+        hazards &= ~(HazardToxicSpikes1 | HazardToxicSpikes2);
+      } else {
+        const bool steel_type = has_type(active, base, TypeSteel);
+        if (!steel_type) {
+          const uint8_t status =
+              (toxic_layers >= 2) ? StatusToxic : StatusPoison;
+          StateMutator::apply_status(state, side, status, 0.0f);
+        }
+      }
+    }
+  }
+
+  if ((hazards & HazardStickyWeb) && grounded) {
+    StateMutator::apply_boost(state, side, StatSpe, -1);
+  }
+}
+
+Action get_switch_action(const BattleState &state, uint8_t side) {
+  Action fallback{};
+  fallback.side = side;
+
+  if (side >= kSides) return fallback;
+  const SideState &side_state = state.sides[side];
+
+  for (BenchSlotIndex slot = 0; slot < kBenchSize; ++slot) {
+    const BenchMon &bench = side_state.bench[slot];
+    if (bench.species_id == 0) continue;
+    if (bench.hp_percent == 0) continue;
+    return Action::make_switch(side, slot);
+  }
+
+  return fallback;
+}
+
+} // namespace omega9
