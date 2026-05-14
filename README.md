@@ -1,191 +1,72 @@
-\# Omega-9: Superhuman Pokémon Battle Engine
+# Omega-9: Stochastic Simulation & RL Environment
 
+> **🟢 PROJECT STATUS: ACTIVE R&D (PHASE 1)**
+> *Current Focus: Core physics engine stabilization, memory-leak patching, and logic-collision debugging. Neural Network integration is suspended pending 100% deterministic state-machine validation.*
 
+**Version:** 0.1.0 (Pre-Alpha)  
+**Target Matrix:** Turn-Based Stochastic Game Theory (VGC Rule-set)  
+**Language:** C++23 (Engine), Python (Training/Bindings)  
+**Architecture:** Bitboard-based, Stateless, Vectorized Reinforcement Learning Environment  
 
-\*\*Version:\*\* 0.1.0 (Pre-Alpha)
+## 1. Project Overview
 
-\*\*Target:\*\* Pokémon Gen 9 Random Battles
+Omega-9 is a high-performance, parallelized state-machine and simulation engine designed to model complex, turn-based game theory mechanics. To stress-test the architecture, the engine is currently configured to model the state-space of the VGC competitive metagame—a highly volatile environment with thousands of variables, hidden information, and RNG mechanics. 
 
-\*\*Language:\*\* C++23 (Engine), Python/JAX (Training)
+Unlike traditional bots that rely on object-oriented state representations and heuristic search, Omega-9 utilizes a **Data-Oriented, Bitboard-based physics engine** optimized for massive parallel simulation. The architecture is engineered specifically to serve as a high-speed environment for Reinforcement Learning (RL) and Monte Carlo Tree Search (MCTS) algorithms, capable of executing >1,000,000 steps per second during self-play batching.
 
-\*\*Architecture:\*\* Bitboard-based, Stateless, Vectorized Reinforcement Learning Environment
+## 2. Core Architecture Constraints
 
+The engine is built on three non-negotiable pillars to ensure maximum computational efficiency:
 
+### A. Bitboard Representation (Memory Optimization)
+* **No Objects:** The architecture strictly prohibits standard OOP overhead (e.g., `class Entity { int hp; }`).
+* **Data-Oriented Design:** The entire battle state must fit into a fixed-size, trivially copyable `struct` (target < 4KB) composed of `uint64_t` bitmasks and flat arrays.
+* **Objective:** To fit the entire active state within CPU L1/L2 cache, allowing for instantaneous copying and hashing during deep-tree searches.
 
-\## 1. Project Overview
+### B. Stateless Logic (Deterministic Execution)
+* **Pure Functions:** The engine logic operates as a pure mathematical function: `f(State_t, Action_p1, Action_p2, Seed) -> (State_t+1, Reward)`.
+* **Zero Side Effects:** The engine does not maintain internal history, logs, or external dependencies. It strictly mutates the bitboard.
+* **O(1) Lookup Tables:** Complex logic (damage formulas, type multipliers) is pre-computed into static `constexpr` arrays or flat hashmaps to eliminate runtime calculation overhead.
 
-Omega-9 is a high-performance, superhuman AI project designed to solve Generation 9 Random Battles. Unlike traditional bots that rely on object-oriented state representations and heuristic search (Minimax/MCTS), Omega-9 utilizes a \*\*Bitboard-based physics engine\*\* optimized for massive parallel simulation on GPUs.
+### C. Vectorization & Batching (Scale)
+* **SIMD Alignment:** Data structures are aligned for Single Instruction, Multiple Data (SIMD) operations.
+* **Batch Processing:** The primary API utilizes `step_batch()`, leveraging OpenMP to advance N games simultaneously across multiple CPU threads.
 
+## 3. Technical Specifications
 
+* **Core Engine:** C++23 (Clang/GCC latest)
+* **Build System:** CMake
+* **Parallelism:** OpenMP 
+* **Python Bindings:** Pybind11 / Nanobind (for JAX/PyTorch integration)
 
-The goal is to train a Deep Reinforcement Learning agent (AlphaZero/MuZero style) capable of executing \*\*>1,000,000 steps per second\*\* during self-play training.
+**Performance Constraints:**
+1. **Memory:** No `std::vector`, `std::string`, or heap allocation inside the hot loop. Strict usage of `std::array`.
+2. **Speed:** A single CPU core must simulate >100,000 turns per second.
+3. **Precision:** Speed is prioritized over perfect accuracy (e.g., approximating damage ranges into normalized buckets is acceptable; parsing JSON during the battle loop is prohibited).
 
+## 4. Endgame State Oracle (Tablebase Integration)
 
+The engine is architected to interface with a 50GB+ Endgame Tablebase. 
+* The engine detects when a simulation state transitions to a 1v1 matrix.
+* In 1v1 states, the engine acts as an Oracle, returning a deterministic Win/Loss reward immediately, bypassing the standard simulation loop to save compute bandwidth.
 
-\## 2. Core Architecture
+## 5. Architectural Milestones
 
-The engine is built on three non-negotiable pillars. All code contributions must adhere to these principles:
-
-
-
-\### A. Bitboard Representation (The "Physics")
-
-\*   \*\*No Objects:\*\* We do not use classes like `class Pokemon { int hp; }`.
-
-\*   \*\*Data-Oriented Design:\*\* The entire battle state must fit into a fixed-size `struct` (target < 4KB) composed of `uint64\_t` bitmasks and flat arrays.
-
-\*   \*\*Why:\*\* To fit the entire state in CPU L1/L2 cache and allow for instant copying/hashing.
-
-
-
-\### B. Stateless Logic (The "Rules")
-
-\*   \*\*Pure Functions:\*\* The engine logic is a pure function: $f(State\_t, Action\_{p1}, Action\_{p2}, Seed) \\rightarrow (State\_{t+1}, Reward)$.
-
-\*   \*\*No Side Effects:\*\* The engine does not maintain internal history or logs. It simply mutates the bitboard.
-
-\*   \*\*Lookup Tables:\*\* Complex logic (Damage formulas, Type charts) is pre-computed into static `constexpr` arrays or flat hashmaps. We do not calculate `((2 \* Level / 5 + 2)...` at runtime.
-
-
-
-\### C. Vectorization \& Batching (The "Scale")
-
-\*   \*\*SIMD First:\*\* Data structures must be aligned for SIMD operations.
-
-\*   \*\*Batch Processing:\*\* The primary API is `step\_batch()`, which advances N games simultaneously (where N = 10,000+).
-
-
-
-\## 3. Technical Specifications
-
-
-
-\### Tech Stack
-
-\*   \*\*Core Engine:\*\* C++23 (Clang/GCC latest).
-
-\*   \*\*Build System:\*\* CMake.
-
-\*   \*\*Parallelism:\*\* OpenMP / CUDA (future).
-
-\*   \*\*Python Bindings:\*\* Pybind11 or Nanobind (for JAX/PyTorch integration).
-
-
-
-\### Constraints
-
-1\.  \*\*Memory:\*\* `BattleState` struct must be `trivially\_copyable`. No `std::vector`, `std::string`, or heap allocation inside the hot loop. Use `std::array`.
-
-2\.  \*\*Speed:\*\* A single CPU core must be able to simulate >100,000 turns per second.
-
-3\.  \*\*Precision:\*\* We prioritize \*\*Speed\*\* over \*\*Perfect Accuracy\*\*.
-
-&nbsp;   \*   \*Acceptable:\* Approximating damage ranges into buckets.
-
-&nbsp;   \*   \*Unacceptable:\* Parsing strings or JSON during the battle loop.
-
-
-
-\## 4. Directory Structure
-
-```text
-
-Omega9\_Engine/
-
-│
-
-├── reference/                <-- PUT THE SHOWDOWN FILES HERE
-
-│   ├── data/
-
-│   │   ├── pokedex.ts
-
-│   │   ├── moves.ts
-
-│   │   ├── typechart.ts
-
-│   │   ├── conditions.ts
-
-│   │   └── random-battles/
-
-│   │       └── gen9/
-
-│   │           ├── sets.json
-
-│   │           └── teams.ts
-
-│   └── sim/
-
-│       ├── battle.ts
-
-│       ├── pokemon.ts
-
-│       ├── side.ts
-
-│       ├── field.ts
-
-│       ├── battle-queue.ts
-
-│       └── battle-actions.ts
-
-├── src/
-
-│   ├── core/       # Bitboard structs and State definitions
-
-│   ├── data/       # Static lookup tables (Moves, Species, TypeChart)
-
-│   ├── engine/     # Mechanics (Damage, Turn Order, Side Effects)
-
-│   ├── env/        # RL Environment wrapper (Step, Reset, Reward)
-
-│   └── python/     # Python bindings
-├── tests/          # Unit tests comparing against Showdown logic
-
-└── tools/          # Scripts to parse /data into C++ headers
-
-```
-
-
-
-\## 5. The "1v1 Tablebase" Integration
-
-\*Note for Developers:\*
-
-This engine is designed to interface with a \*\*50GB+ Endgame Tablebase\*\*.
-
-\*   The engine must detect when a state transitions from 2v1 to 1v1.
-
-\*   In 1v1 states, the engine acts as an Oracle, returning a deterministic Win/Loss reward immediately, bypassing the standard simulation loop.
-
-
-
-\## 6. Development Roadmap (Prompt Sequence)
-
-The codebase is being constructed via a sequence of 10 specific modules:
-
-1\.  \*\*Bitboard State Definition\*\* (Memory layout)
-
-2\.  \*\*Static Database\*\* (O(1) Lookups)
-
-3\.  \*\*Action \& Turn Order\*\* (Priority logic)
-
-4\.  \*\*Vectorized Damage\*\* (SIMD math)
-
-5\.  \*\*State Mutation\*\* (Bitwise operations)
-
-6\.  \*\*Switching \& Hazards\*\* (Entry logic)
-
-7\.  \*\*The Step Function\*\* (Main loop)
-
-8\.  \*\*Batch Processing\*\* (OpenMP)
-
-9\.  \*\*Tensor Serialization\*\* (Input for Neural Net)
-
-10\. \*\*Validation Suite\*\* (Correctness tests)
-
-
+The codebase is structured into 10 specific deployment modules:
+1. Bitboard State Definition (Memory layout)
+2. Static Database (O(1) Lookups)
+3. Action & Turn Order (Priority logic)
+4. Vectorized Damage (SIMD math)
+5. State Mutation (Bitwise operations)
+6. Switching & Hazards (Entry logic)
+7. The Step Function (Main loop)
+8. Batch Processing (OpenMP)
+9. Tensor Serialization (Input for Neural Net)
+10. Validation Suite (Correctness tests)
 
 ---
 
-\*This README serves as the context for all code generation. If a generated solution violates the "No Heap Allocation" or "Bitboard" constraints, it is invalid.\*
+### 🔒 OPSEC & ARCHITECTURAL NOTE
+*This repository is a sanitized, professional mirror of a proprietary architecture. My role in this project is strictly **Systems Architect and QA Lead**. I designed the mathematical constraints, the state-space logic, and the architectural requirements outlined above, and deployed advanced LLM coding agents to generate the compiled C++ syntax.* 
 
+*My active execution loop consists of rigorous black-box QA, identifying logic collisions within the AI-generated code, isolating edge-case failures, and re-prompting the agents to patch memory leaks and stabilize the core physics engine prior to neural network integration.*
